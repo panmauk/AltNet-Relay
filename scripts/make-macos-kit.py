@@ -19,7 +19,7 @@ import sys
 import zipfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CORE = os.environ.get('ALTNET_CORE', r'../altnet')
+CORE = os.environ.get('ALTNET_CORE', '').strip()
 DIST = os.path.join(HERE, 'dist')
 KIT = os.path.join(DIST, 'AltNetRelay-macOS')
 SRC = os.path.join(KIT, 'src')
@@ -53,6 +53,8 @@ def run(cmd, cwd, env=None):
 
 
 def main():
+    if not CORE:
+        sys.exit('Set ALTNET_CORE to the AltNet core repository root.')
     print(f'==> AltNet Relay {VER}: Mac build kit')
     if os.path.exists(KIT):
         shutil.rmtree(KIT)
@@ -67,7 +69,7 @@ def main():
     shutil.copy2(os.path.join(CORE, 'go.mod'), core_dst)
     copytree(os.path.join(CORE, 'core'), os.path.join(core_dst, 'core'))
 
-    # go.mod finds the core library by a path on this PC; point it at the copy.
+    # Point go.mod at the vendored core copy in the kit.
     for gomod, rel in ((os.path.join(SRC, 'go.mod'), './third_party/altnet'),
                        (os.path.join(SRC, 'app', 'desktop', 'go.mod'), '../../third_party/altnet')):
         text = open(gomod, encoding='utf-8').read()

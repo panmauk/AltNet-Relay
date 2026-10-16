@@ -8,6 +8,7 @@ demo/
 
 # Local tool settings
 .claude/
+*PROMPT*.md
 
 # Never commit keys
 *.key

@@ -4,16 +4,15 @@
 # with Go, the Wails CLI, build-essential, libgtk-3-dev and
 # libwebkit2gtk-4.1-dev):
 #
-#   wsl -d Ubuntu -u root -- bash "/mnt/d/software/AltNet Relay/scripts/build-linux.sh"
+#   wsl -d Ubuntu -u root -- bash scripts/build-linux.sh
 #
-# Output goes to dist/ next to the Windows installer. The AltNet core module is
-# read from ALTNET_CORE (default: the core repo on this PC); nothing in it is
-# changed.
+# Output goes to dist/ next to the Windows installer. Set ALTNET_CORE to the
+# AltNet core repository root (the folder that contains core/ and go.mod).
 set -euo pipefail
 export PATH=/usr/local/go/bin:$HOME/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-CORE="${ALTNET_CORE:-/mnt/c/Users/${WINDOWS_USER:?Set WINDOWS_USER}/Documents/Internet}"
+CORE="${ALTNET_CORE:-}"
 VER="$(sed -n 's/.*"productVersion": "\(.*\)".*/\1/p' "$HERE/app/desktop/wails.json")"
 WORK="$HOME/relay-linux-build"
 OUT="$HERE/dist"
@@ -23,6 +22,7 @@ fail() { echo "build-linux: $*" >&2; exit 1; }
 command -v go >/dev/null || fail "Go not found"
 command -v wails >/dev/null || fail "the Wails CLI not found (go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0)"
 pkg-config --exists webkit2gtk-4.1 || fail "libwebkit2gtk-4.1-dev is missing"
+[ -n "$CORE" ] || fail "set ALTNET_CORE to the AltNet core repository root"
 [ -f "$CORE/core/peer/peer.go" ] || [ -d "$CORE/core/peer" ] || fail "AltNet core not found at $CORE"
 
 echo "==> copying sources (version $VER)"
@@ -33,7 +33,7 @@ mkdir -p "$WORK/relay" "$WORK/altnet"
 tar -C "$HERE" --exclude=./dist --exclude=./app/desktop/build/bin --exclude=./.claude -cf - . | tar -C "$WORK/relay" -xf -
 cp "$CORE/go.mod" "$WORK/altnet/"
 cp -r "$CORE/core" "$WORK/altnet/"
-# go.mod points at the core repo by its Windows path; point it at the copy.
+# Point go.mod at the copied core tree in the build workspace.
 sed -i 's#^replace altnet => .*#replace altnet => ../altnet#' "$WORK/relay/go.mod"
 sed -i 's#^replace altnet => .*#replace altnet => ../../../altnet#' "$WORK/relay/app/desktop/go.mod"
 

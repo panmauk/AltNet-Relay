@@ -49,7 +49,7 @@ func main() {
 	bootstrap := flag.String("bootstrap", "127.0.0.1:9000", "AltNet peer to join through: the seed on this machine")
 	peerListen := flag.String("peer-listen", "0.0.0.0:9200", "address this node accepts AltNet peers on")
 	public := flag.Bool("public", false, "this node is directly reachable from the internet at -peer-listen")
-	relayAddr := flag.String("relay", "", "public address of a relay to register with (the seed's, e.g. 130.162.215.155:9100), so other nodes can reach this one without an open port")
+	relayAddr := flag.String("relay", "", "public address of a relay to register with (the seed's, e.g. seed.example:9100), so other nodes can reach this one without an open port")
 	hub := flag.Bool("hub", false, "also act as a notification watcher for Relay clients")
 	storeMB := flag.Int64("store-mb", 16, "most network data this node keeps for others, in MB (it is not meant to be a storage node)")
 	turnSecret := flag.String("turn-secret-file", "", "file holding coturn's shared secret; enables call-relay credentials")
