@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AltNet Relay</title>
+    <link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+
+<!-- Sign-in gate. Relay needs a free AltNet account: it is what keeps @names
+     unique and lets abuse be dealt with. The card is plain on purpose -- one
+     task per screen. Nothing here is built from user data. -->
+<div class="gate" id="gate" hidden>
+    <div class="gate-card">
+        <div class="gate-brand">
+            <span class="dot"></span><span class="word">ALTNET</span><span class="suffix">Relay</span>
+        </div>
+
+        <form class="gate-form" data-mode="signin">
+            <h1>Sign in</h1>
+            <p>Relay uses your free AltNet account &mdash; the same one you use for AltNet Studio.</p>
+            <p class="note gate-reason" id="gate-reason" hidden></p>
+            <input class="field" name="email" type="email" placeholder="Email" autocomplete="username" spellcheck="false">
+            <input class="field" name="password" type="password" placeholder="Password" autocomplete="current-password">
+            <div class="error"></div>
+            <button class="btn" type="submit">Sign in</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signup">Create an account</button>
+                <button type="button" class="link" data-go="reset">Forgot password?</button>
+            </div>
+        </form>
+
+        <form class="gate-form" data-mode="signup" hidden>
+            <h1>Create your account</h1>
+            <p>Free. Your email is only used to sign in and to reach you about your account &mdash; never to read your messages, which nobody but you and the people you write to can.</p>
+            <input class="field" name="email" type="email" placeholder="Email" autocomplete="username" spellcheck="false">
+            <input class="field" name="password" type="password" placeholder="Password (at least 8 characters)" autocomplete="new-password">
+            <label class="check"><input type="checkbox" name="agree"> <span>I am 16 or older and agree to the <button type="button" class="link inline" data-terms>Terms and Privacy Policy</button>.</span></label>
+            <div class="error"></div>
+            <button class="btn" type="submit">Create account</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signin">I already have an account</button>
+            </div>
+        </form>
+
+        <form class="gate-form" data-mode="verify" hidden>
+            <h1>Check your email</h1>
+            <p class="verify-hint">We sent a code to your email address. Type it here.</p>
+            <input class="field code" name="code" inputmode="numeric" placeholder="Code" autocomplete="one-time-code" spellcheck="false" maxlength="12">
+            <div class="error"></div>
+            <button class="btn" type="submit">Verify</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signin">Back to sign in</button>
+            </div>
+        </form>
+
+        <!-- Signing in brought the account's copy here; the app restarts. -->
+        <div class="gate-form" data-mode="moving" hidden>
+            <h1>Bringing your account here</h1>
+            <p>Your conversations, groups and settings are on their way. AltNet Relay restarts in a moment.</p>
+            <div class="error" hidden></div>
+        </div>
+
+        <!-- The account lives on another computer and its copy can't come here. -->
+        <form class="gate-form" data-mode="fresh" hidden>
+            <h1>Start fresh on this computer?</h1>
+            <p id="fresh-why"></p>
+            <p class="note">Starting fresh keeps your account and your @name. Your earlier conversations stay on your other computer and can&rsquo;t be opened here, and people who already talk to you will need to find you again by your @name. Your other computer is signed out.</p>
+            <div class="error"></div>
+            <button class="btn" type="submit">Start fresh here</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signin">Back to sign in</button>
+            </div>
+        </form>
+
+        <form class="gate-form" data-mode="reset" hidden>
+            <h1>Reset your password</h1>
+            <p>Type your email and we will send you a code.</p>
+            <input class="field" name="email" type="email" placeholder="Email" autocomplete="username" spellcheck="false">
+            <div class="error"></div>
+            <button class="btn" type="submit">Send code</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signin">Back to sign in</button>
+            </div>
+        </form>
+
+        <form class="gate-form" data-mode="reset2" hidden>
+            <h1>Choose a new password</h1>
+            <p>Type the code from your email and a new password.</p>
+            <input class="field code" name="code" inputmode="numeric" placeholder="Code" autocomplete="one-time-code" spellcheck="false" maxlength="12">
+            <input class="field" name="password" type="password" placeholder="New password (at least 8 characters)" autocomplete="new-password">
+            <div class="error"></div>
+            <button class="btn" type="submit">Change password</button>
+            <div class="links">
+                <button type="button" class="link" data-go="signin">Back to sign in</button>
+            </div>
+        </form>
+
+        <div class="gate-foot"><button type="button" class="link" data-terms>Terms and Privacy</button></div>
+    </div>
+</div>
+
+<!-- Shown instead of the app when the account is banned or suspended. The
+     reason is the operator's own statement, shown as written. -->
+<div class="gate" id="banned" hidden>
+    <div class="gate-card">
+        <div class="gate-brand">
+            <span class="dot offline"></span><span class="word">ALTNET</span><span class="suffix">Relay</span>
+        </div>
+        <div class="gate-form">
+            <h1>This account can&rsquo;t use Relay</h1>
+            <p id="banned-reason"></p>
+            <p class="note">If you think this is a mistake, write to <span class="sel">abuse.report@panmox.org</span> and we will look at it again.</p>
+            <button class="btn ghost" id="banned-signout">Sign out</button>
+        </div>
+    </div>
+</div>
+
+<div id="app">
+
+    <aside class="sidebar">
+        <div class="brand">
+            <span class="dot" id="net-dot"></span>
+            <span class="word">ALTNET</span>
+            <span class="suffix">Relay</span>
+        </div>
+
+        <div class="me">
+            <div class="handle">
+                <span id="my-handle">—</span>
+                <button class="copy" id="copy-id" title="Copy your username">copy</button>
+            </div>
+            <div class="sub" id="my-sub"></div>
+        </div>
+
+        <!-- One account, two sides. Personal is friends and groups; Business is
+             workspaces. The dot on the side you are not on says it needs you. -->
+        <div class="modeswitch" id="modeswitch" role="tablist" aria-label="Personal or Business">
+            <button role="tab" data-mode="personal" class="on" aria-selected="true">Personal<span class="pip" hidden></span></button>
+            <button role="tab" data-mode="business" aria-selected="false">Business<span class="pip" hidden></span></button>
+        </div>
+
+        <div class="list" id="list"></div>
+
+        <!-- A new version: Restart to install it, or where to get it. -->
+        <div class="update-bar" id="update-bar" hidden>
+            <div class="update-text" id="update-text"></div>
+            <button class="btn" id="update-go"></button>
+        </div>
+
+        <div class="sidebar-foot">
+            <button class="btn" id="add-btn">Add someone</button>
+            <button class="btn" id="channel-btn" hidden>New channel</button>
+            <button class="btn" id="ws-btn" hidden>Create a workspace</button>
+            <div class="foot-links">
+                <button class="link" id="group-btn">New group</button>
+                <button class="link" id="invite-btn" hidden>Invite people</button>
+                <button class="link" id="account-btn">Account</button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main" id="main"></main>
+</div>
+
+<!-- Claim a handle: the first thing a new user sees. One field, one
+     action, no explanation of the cryptography underneath. -->
+<div class="overlay" id="claim-modal" hidden>
+    <div class="modal">
+        <h2>Choose your name</h2>
+        <p>This is what people type to reach you. Pick something you're happy to give out — it can't be changed later.</p>
+        <input class="field" id="claim-input" placeholder="rob" autocomplete="off" spellcheck="false" maxlength="32">
+        <div class="error" id="claim-error"></div>
+        <p class="note">You can skip this. Without a name, people can still reach you using your full ID — but they'll have to type all 64 characters of it.</p>
+        <div class="actions">
+            <button class="btn ghost" id="claim-skip">Skip</button>
+            <button class="btn" id="claim-go">Claim</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add a contact. -->
+<div class="overlay" id="add-modal" hidden>
+    <div class="modal">
+        <h2>Add someone</h2>
+        <p>Type their name, or paste their full ID.</p>
+        <input class="field" id="add-input" placeholder="rob" autocomplete="off" spellcheck="false">
+        <div class="error" id="add-error"></div>
+        <div class="actions">
+            <button class="btn ghost" id="add-cancel">Cancel</button>
+            <button class="btn" id="add-go">Add</button>
+        </div>
+    </div>
+</div>
+
+<!-- Block confirmation. Blocking is quiet and reversible, but it's still
+     worth one sentence saying exactly what it does and doesn't do. -->
+<div class="overlay" id="block-modal" hidden>
+    <div class="modal">
+        <h2 id="block-title">Block?</h2>
+        <p>You won't get their messages or requests. Your conversation stays, and you can unblock them any time. They aren't told.</p>
+        <label class="check"><input type="checkbox" id="block-report"> <span>Also report them to AltNet</span></label>
+        <div class="stack" id="block-report-form" hidden>
+            <textarea class="field" id="block-reason" rows="3" maxlength="900" placeholder="What did they do?"></textarea>
+            <label class="check"><input type="checkbox" id="block-attach" checked> <span>Include the last 10 messages from this conversation</span></label>
+            <p class="note">Messages are end-to-end encrypted, so AltNet can&rsquo;t read them. If you include them, they are sent to AltNet for this report only. The person you report isn&rsquo;t told. When three different people report the same account, it is banned automatically.</p>
+        </div>
+        <div class="error" id="block-error"></div>
+        <div class="actions">
+            <button class="btn ghost" id="block-cancel">Cancel</button>
+            <button class="btn danger" id="block-go">Block</button>
+        </div>
+    </div>
+</div>
+
+<!-- Account. Deliberately short: who you are signed in as, and the way out. -->
+<div class="overlay" id="account-modal" hidden>
+    <div class="modal">
+        <h2>Your account</h2>
+        <div class="kv"><span>Signed in as</span><strong id="acct-email"></strong></div>
+        <div class="kv"><span>Your name</span><strong id="acct-handle"></strong></div>
+        <div class="stack settings" id="bg-settings">
+            <label class="check"><input type="checkbox" id="set-startup"> <span>Start AltNet Relay when I sign in to Windows</span></label>
+            <label class="check"><input type="checkbox" id="set-background"> <span>Keep running in the background when I close the window, so messages reach me straight away</span></label>
+            <label class="check"><input type="checkbox" id="set-notifications"> <span>Show desktop notifications (they say who wrote, never what they said)</span></label>
+            <label class="check"><input type="checkbox" id="set-autoupdate"> <span>Install updates automatically (when you&rsquo;re not using the app)</span></label>
+            <label class="check"><input type="checkbox" id="set-copy"> <span>Keep a locked copy of my account, so I can sign in on other computers</span></label>
+            <div class="row-input" id="copy-unlock" hidden>
+                <input class="field" id="copy-pw" type="password" placeholder="Your password" autocomplete="current-password">
+                <button class="btn ghost" id="copy-go">Turn on</button>
+            </div>
+            <p class="note" id="copy-note"></p>
+            <div class="row-input">
+                <button class="btn ghost" id="set-test">Send a test notification</button>
+                <button class="btn ghost" id="set-quit">Quit AltNet Relay</button>
+            </div>
+            <p class="note" id="set-msg"></p>
+        </div>
+        <p class="note" id="acct-offline" hidden>Can&rsquo;t reach the AltNet account service right now. You can keep chatting; it will reconnect on its own.</p>
+        <p class="note">Signing out keeps your conversations on this computer. You will need to sign in again to send messages.</p>
+        <div class="actions">
+            <button class="btn ghost" id="acct-tour">Take the tour</button>
+            <button class="btn ghost" id="acct-terms">Terms and Privacy</button>
+            <button class="btn ghost" id="acct-signout">Sign out</button>
+            <button class="btn" id="acct-close">Close</button>
+        </div>
+        <div class="faint-row"><span class="faint-text" id="acct-version"></span><button class="link faint" id="acct-delete">Delete account</button></div>
+    </div>
+</div>
+
+<!-- Deleting the account. Slow on purpose: an emailed code, the password, the
+     name typed out, and a last question. The server checks every step again
+     before anything is deleted. Driven by main.js. -->
+<div class="overlay" id="delete-modal" hidden>
+    <div class="modal">
+        <div class="stack" data-step="intro">
+            <h2>Delete your account</h2>
+            <p>This deletes your AltNet account for good. It is the same account you use for AltNet Studio, so that sign-in goes too.</p>
+            <ul class="del-list">
+                <li>Your email address, password and @name are removed. Your @name will never be given to anyone else.</li>
+                <li>Everything on this computer is erased: your conversations, groups, workspaces and keys. AltNet Relay then closes.</li>
+                <li>Messages you have already sent stay with the people you sent them to. Nobody is told you left; new messages to you simply won&rsquo;t arrive.</li>
+            </ul>
+            <p class="note">First we&rsquo;ll email a code to <strong id="del-email"></strong> to make sure it&rsquo;s you.</p>
+        </div>
+        <div class="stack" data-step="code" hidden>
+            <h2>Check your email</h2>
+            <p>We sent a 6-digit code to <strong id="del-email2"></strong>. Type it here. It works for 15 minutes.</p>
+            <input class="field code" id="del-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="Code" spellcheck="false">
+        </div>
+        <div class="stack" data-step="password" hidden>
+            <h2>Your password</h2>
+            <p>Type the password for your AltNet account.</p>
+            <input class="field" id="del-password" type="password" autocomplete="current-password" placeholder="Password">
+        </div>
+        <div class="stack" data-step="name" hidden>
+            <h2 id="del-name-title">Type your name</h2>
+            <p id="del-name-hint"></p>
+            <input class="field" id="del-name" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="stack" data-step="sure" hidden>
+            <h2>Are you really sure?</h2>
+            <p>Your account and everything on this computer will be deleted now. <strong>This can&rsquo;t be undone.</strong></p>
+        </div>
+        <div class="stack" data-step="done" hidden>
+            <h2>Your account is deleted</h2>
+            <p>Thank you for using AltNet Relay. It will close in a moment.</p>
+        </div>
+        <div class="error" id="del-error"></div>
+        <div class="actions" id="del-actions">
+            <button class="btn ghost" id="del-cancel">Cancel</button>
+            <button class="btn" id="del-next">Email me a code</button>
+        </div>
+    </div>
+</div>
+
+<!-- Report. The reporter chooses whether any messages go with it. -->
+<div class="overlay" id="report-modal" hidden>
+    <div class="modal">
+        <h2 id="report-title">Report</h2>
+        <div id="report-form" class="stack">
+            <p id="report-intro">Tell us what happened.</p>
+            <textarea class="field" id="report-reason" rows="4" maxlength="900" placeholder="What did they do?"></textarea>
+            <label class="check"><input type="checkbox" id="report-attach" checked> <span id="report-attach-label">Include the last 10 messages from this conversation</span></label>
+            <p class="note" id="report-note">Messages are end-to-end encrypted, so AltNet can&rsquo;t read them. If you include them, they are sent to AltNet for this report only. The person you are reporting isn&rsquo;t told. When three different people report the same account, it is banned automatically; a ban can always be appealed at abuse.report@panmox.org.</p>
+            <div class="error" id="report-error"></div>
+            <div class="actions">
+                <button class="btn ghost" id="report-cancel">Cancel</button>
+                <button class="btn danger" id="report-go">Send report</button>
+            </div>
+        </div>
+        <div id="report-done" class="stack" hidden>
+            <p id="report-ack"></p>
+            <div class="actions">
+                <button class="btn danger" id="report-block">Block them too</button>
+                <button class="btn" id="report-close">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- New group. Whoever is added gets an invitation; nobody is put in a
+     group without saying yes. -->
+<div class="overlay" id="group-modal" hidden>
+    <div class="modal">
+        <h2>New group</h2>
+        <input class="field" id="group-name" placeholder="Group name" autocomplete="off" maxlength="64">
+        <textarea class="field" id="group-people" rows="3" placeholder="Names or IDs, separated by commas" spellcheck="false"></textarea>
+        <p class="note">Each person gets an invitation and decides whether to join. Messages are end-to-end encrypted to every member separately. Up to 32 people.</p>
+        <div class="error" id="group-error"></div>
+        <div class="actions">
+            <button class="btn ghost" id="group-cancel">Cancel</button>
+            <button class="btn" id="group-go">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Who is in a group. The admin can add and remove people here. -->
+<div class="overlay" id="members-modal" hidden>
+    <div class="modal">
+        <h2 id="members-title">Members</h2>
+        <div class="row-input" id="rename-row" hidden>
+            <input class="field" id="rename-input" placeholder="Group name" autocomplete="off" maxlength="64">
+            <button class="btn ghost" id="rename-go">Rename</button>
+        </div>
+        <!-- The owner of a workspace reads members' reports here. -->
+        <div class="stack wsreports" id="members-reports" hidden></div>
+        <div class="members" id="members-list"></div>
+        <div class="stack" id="members-add">
+            <div class="row-input">
+                <input class="field" id="members-input" placeholder="Add people: names or IDs" autocomplete="off" spellcheck="false">
+                <button class="btn" id="members-go">Add</button>
+            </div>
+            <p class="note" id="members-note"></p>
+        </div>
+        <div class="error" id="members-error"></div>
+        <div class="actions"><button class="btn" id="members-close">Done</button></div>
+    </div>
+</div>
+
+<div class="overlay" id="leave-modal" hidden>
+    <div class="modal">
+        <h2 id="leave-title">Leave group?</h2>
+        <p id="leave-text">You'll stop getting its messages, and the others will see that you left. What was said stays readable on this computer.</p>
+        <div class="actions">
+            <button class="btn ghost" id="leave-cancel">Cancel</button>
+            <button class="btn danger" id="leave-go">Leave</button>
+        </div>
+    </div>
+</div>
+
+<!-- Create a workspace (Business). Whoever is named gets an invitation and
+     decides for themselves; nobody is put in a company without saying yes. -->
+<div class="overlay" id="ws-modal" hidden>
+    <div class="modal">
+        <h2>Create a workspace</h2>
+        <input class="field" id="ws-name" placeholder="Company or team name" autocomplete="off" maxlength="64">
+        <textarea class="field" id="ws-people" rows="3" placeholder="Invite people now (optional): names or IDs, separated by commas" spellcheck="false"></textarea>
+        <p class="note">Everyone you invite chooses whether to join. You can invite more people later. Every message is end-to-end encrypted to each member separately, and nothing is kept on anyone&rsquo;s server. Up to 50 people.</p>
+        <div class="error" id="ws-error"></div>
+        <div class="actions">
+            <button class="btn ghost" id="ws-cancel">Cancel</button>
+            <button class="btn" id="ws-go">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- New channel: a thread inside a workspace for the people who need it. -->
+<div class="overlay" id="channel-modal" hidden>
+    <div class="modal">
+        <h2>New channel</h2>
+        <input class="field" id="channel-name" placeholder="design, launch, support&hellip;" autocomplete="off" maxlength="48">
+        <div class="pick-head">
+            <span>Who&rsquo;s in it</span>
+            <button type="button" class="link" id="channel-all">Select everyone</button>
+        </div>
+        <div class="picklist" id="channel-people"></div>
+        <p class="note">Only people in the workspace can be added, and they&rsquo;re added straight away &mdash; they already said yes to the company. Others won&rsquo;t see the channel.</p>
+        <div class="error" id="channel-error"></div>
+        <div class="actions">
+            <button class="btn ghost" id="channel-cancel">Cancel</button>
+            <button class="btn" id="channel-go">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- First-run tour. Built by main.js; also reachable from Account. -->
+<div class="overlay tour" id="tour" hidden>
+    <div class="tour-card" role="dialog" aria-labelledby="tour-title">
+        <div class="tour-art" id="tour-art"></div>
+        <h2 id="tour-title"></h2>
+        <p id="tour-body"></p>
+        <ul class="tour-points" id="tour-points"></ul>
+        <div class="tour-dots" id="tour-dots"></div>
+        <div class="tour-actions">
+            <button class="link" id="tour-skip">Skip</button>
+            <span class="spacer"></span>
+            <button class="btn ghost" id="tour-back">Back</button>
+            <button class="btn ghost" id="tour-alt" hidden></button>
+            <button class="btn" id="tour-next">Next</button>
+        </div>
+    </div>
+</div>
+
+<!-- Terms and Privacy live in the app so they work without a website. -->
+<div class="overlay" id="terms-modal" hidden>
+    <div class="modal wide">
+        <h2>Terms and Privacy</h2>
+        <div class="doc" id="terms-body"></div>
+        <div class="actions"><button class="btn" id="terms-close">Close</button></div>
+    </div>
+</div>
+
+<!-- Call bar: floats above whichever conversation is open, because a call
+     goes on while you look at something else. Built by main.js. -->
+<div class="callbar" id="callbar" hidden></div>
+
+<!-- Video stage: shown while either camera is on. The two video elements
+     live here permanently so a picture never flickers when the bar redraws. -->
+<div class="stage" id="stage" hidden>
+    <video id="remote-video" autoplay playsinline hidden></video>
+    <div class="stage-wait" id="stage-wait">
+        <div class="stage-name" id="stage-name"></div>
+        <div class="stage-sub">Camera off</div>
+    </div>
+    <video id="local-video" autoplay playsinline muted hidden></video>
+    <!-- Group calls: one tile per person, built by main.js. -->
+    <div class="stage-grid" id="stage-grid" hidden></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="src/call.js" defer></script>
+<script src="src/groupcall.js" defer></script>
+<script src="src/main.js" defer></script>
+</body>
+</html>

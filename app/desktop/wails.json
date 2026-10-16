@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "AltNetRelay",
+  "outputfilename": "AltNetRelay",
+  "frontend:install": "",
+  "frontend:build": "",
+  "wailsjsdir": "./frontend/wailsjs",
+  "author": {
+    "name": "panmauk",
+    "email": "panmauk@panmox.org"
+  },
+  "info": {
+    "companyName": "PANMOX",
+    "productName": "AltNet Relay",
+    "productVersion": "1.0.6",
+    "copyright": "© 2026 PANMOX",
+    "comments": "End-to-end encrypted chat over the AltNet network"
+  }
+}

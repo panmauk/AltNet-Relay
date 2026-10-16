@@ -1,0 +1,45 @@
+[Unit]
+Description=AltNet Relay server (Relay accounts, unique names, reports, network bans)
+After=network-online.target altnet.service altnet-backend.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+# The email settings (ALTNET_SMTP_*) for account-deletion codes: only those
+# lines, copied from /etc/altnet-backend.env -- not the whole file, which also
+# holds the backend's admin password. Root-only (600); systemd reads it before
+# dropping to ubuntu. Without it, deleting is answered with "write to us".
+EnvironmentFile=-/etc/altnet-relay-mail.env
+WorkingDirectory=/opt/altnet/relay
+# Listens on localhost only: Caddy is the one door in from the internet.
+# -bootstrap joins the seed running on this same machine. The node port
+# (9200) isn't open to the internet; -relay makes the node reachable through
+# the seed's relay instead, and -hub lets it tell apps about new messages
+# the moment they arrive.
+ExecStart=/opt/altnet/relay/relay-server \
+    -listen 127.0.0.1:8788 \
+    -data /opt/altnet/relay/data \
+    -backend http://127.0.0.1:8787 \
+    -operator-key /opt/altnet/relay/operator.key \
+    -bootstrap 127.0.0.1:9000 \
+    -peer-listen 0.0.0.0:9200 \
+    -relay 130.162.215.155:9100 \
+    -hub \
+    -turn-secret-file /opt/altnet/relay/turn-secret \
+    -turn-urls turn:130.162.215.155:3478?transport=udp
+StandardInput=null
+Restart=always
+RestartSec=3
+
+# The machine is small (about 1 GB) and shared with the seed and the
+# accounts backend. This keeps a runaway Relay from taking them down.
+MemoryMax=200M
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/opt/altnet/relay
+
+[Install]
+WantedBy=multi-user.target

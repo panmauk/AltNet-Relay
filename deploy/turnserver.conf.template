@@ -1,0 +1,50 @@
+# coturn for AltNet Relay voice calls. Written by install-coturn.sh; the
+# placeholders are filled in on the server so the secret never lives in this repo.
+
+listening-port=3478
+listening-ip=__PRIVATE_IP__
+relay-ip=__PRIVATE_IP__
+# This machine sits behind the cloud provider's NAT: tell coturn its public address.
+external-ip=__PUBLIC_IP__/__PRIVATE_IP__
+
+realm=panmox.org
+server-name=relay.panmox.org
+fingerprint
+
+# Credentials are derived from a shared secret that relay-server also holds,
+# and expire on their own (see server/turn.go). Only signed-in accounts are
+# ever given any, so nobody else can use this relay.
+use-auth-secret
+static-auth-secret=__SECRET__
+
+# Voice only: UDP, a small fixed range of relay ports, capped per session.
+no-tcp-relay
+min-port=49160
+max-port=49200
+user-quota=4
+total-quota=40
+max-bps=131072
+stale-nonce=600
+
+# No TLS on this port (no certificate here); call audio is encrypted end to
+# end by WebRTC regardless.
+no-tls
+no-dtls
+no-cli
+no-multicast-peers
+
+# Never relay to private or loopback addresses, so this can't be used to poke
+# at the machine's own services or its network.
+denied-peer-ip=0.0.0.0-0.255.255.255
+denied-peer-ip=10.0.0.0-10.255.255.255
+denied-peer-ip=100.64.0.0-100.127.255.255
+denied-peer-ip=127.0.0.0-127.255.255.255
+denied-peer-ip=169.254.0.0-169.254.255.255
+denied-peer-ip=172.16.0.0-172.31.255.255
+denied-peer-ip=192.168.0.0-192.168.255.255
+# ...except this server's own address: when BOTH people in a call go through
+# this relay, each one's audio goes to the other's relay port here, and the
+# rule above would otherwise block exactly that case.
+allowed-peer-ip=__PRIVATE_IP__
+
+syslog

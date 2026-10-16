@@ -1,0 +1,1034 @@
+/* AltNet Relay — PANMOX visual language.
+ *
+ * Same palette as AltNet Studio (which is itself "inspired by
+ * panmox.org"), deliberately without Studio's decorative layer: no star
+ * field, no drifting glow. Studio is a place you visit to publish
+ * something; Relay is a place you live in while talking to someone, and
+ * ambient motion behind a conversation is noise.
+ *
+ * The discipline here: lots of empty space, one obvious action per
+ * screen, and cyan used only as a SIGNAL (unread, active, send) rather
+ * than as decoration. If everything glows, nothing reads as important.
+ */
+
+/* No web fonts. Studio pulls Inter from fonts.googleapis.com, which
+ * means every launch tells Google the user's IP address -- acceptable
+ * for a publishing tool, not for a private messenger. Relay uses the
+ * platform's own UI font instead (Segoe UI Variable on Windows 11, SF on
+ * macOS), which also means it renders correctly with no connection. */
+
+:root {
+    --font-ui:   "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    --font-mono: "Cascadia Mono", Consolas, ui-monospace, "SF Mono", monospace;
+
+    --bg:          #060a18;
+    --bg-panel:    #080e20;
+    --bg-elev:     rgba(20, 30, 56, .45);
+    --bg-input:    rgba(8, 14, 30, .85);
+    --border:      rgba(0, 200, 255, .10);
+    --border-soft: rgba(0, 200, 255, .05);
+    --text:        #e8f0ff;
+    --text-dim:    #8aa8c7;
+    --text-faint:  #5a8ab5;
+    --accent:      #00c8ff;
+    --accent-dim:  rgba(0, 200, 255, .14);
+    --danger:      #ff6b6b;
+    --ok:          #28c878;
+
+    --sidebar-w: 288px;
+    --radius:    14px;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    user-select: none;
+    overflow: hidden;
+}
+
+button, input, textarea { font: inherit; color: inherit; }
+button { background: none; border: none; cursor: pointer; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(0,200,255,.10); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(0,200,255,.22); }
+
+/* ─────────────────────────────  shell  ───────────────────────────── */
+
+#app { display: flex; height: 100vh; }
+
+.sidebar {
+    width: var(--sidebar-w);
+    flex-shrink: 0;
+    background: var(--bg-panel);
+    border-right: 1px solid var(--border-soft);
+    display: flex;
+    flex-direction: column;
+}
+
+.main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ─────────────────────────────  brand  ───────────────────────────── */
+
+.brand {
+    padding: 22px 22px 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.brand .dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 10px rgba(0,200,255,.6);
+    flex-shrink: 0;
+}
+/* Offline: the dot is the single honest indicator of whether this thing
+   is actually connected to anything. Grey, not red — being offline is a
+   state, not an error. */
+.brand .dot.offline {
+    background: var(--text-faint);
+    box-shadow: none;
+}
+.brand .word {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 3.5px;
+    color: var(--accent);
+}
+.brand .suffix {
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0;
+    margin-left: -4px;
+}
+
+/* your own handle, directly under the wordmark */
+.me {
+    padding: 0 22px 18px;
+    border-bottom: 1px solid var(--border-soft);
+}
+.me .handle {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.me .copy {
+    font-size: 11px;
+    color: var(--text-faint);
+    padding: 2px 7px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    transition: color .15s, border-color .15s;
+}
+.me .copy:hover { color: var(--accent); border-color: var(--accent-dim); }
+.me .sub {
+    font-size: 12px;
+    color: var(--text-faint);
+    margin-top: 3px;
+}
+
+/* ───────────────────────────  contact list  ──────────────────────── */
+
+.list { flex: 1; overflow-y: auto; padding: 12px 0 20px; }
+
+.section-label {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-faint);
+    padding: 14px 22px 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.section-label .count {
+    color: var(--accent);
+    letter-spacing: 0;
+}
+
+.row {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 22px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    transition: background .12s;
+}
+.row:hover { background: rgba(255,255,255,.022); }
+.row.active {
+    background: rgba(0,200,255,.05);
+    border-left-color: var(--accent);
+}
+
+/* Initial-letter avatar. No images anywhere in Relay — a chat app that
+   invents avatars for people who never chose one is adding noise. */
+.avatar {
+    width: 30px; height: 30px;
+    border-radius: 9px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    text-transform: uppercase;
+}
+.row.active .avatar { color: var(--accent); border-color: var(--accent-dim); }
+
+.row .meta { flex: 1; min-width: 0; }
+.row .name {
+    font-size: 13.5px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.row .preview {
+    font-size: 12px;
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+}
+/* Unread count: the one thing in the sidebar that is allowed to be cyan
+   and filled, because it's the one thing asking for attention. */
+.row .unread {
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9px;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 10.5px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* A blocked conversation stays in the list -- blocking isn't deleting --
+   but recedes, so it doesn't compete with people you're talking to. */
+.row.blocked { opacity: .45; }
+.row.blocked:hover { opacity: .7; }
+
+.empty-hint {
+    padding: 18px 22px;
+    font-size: 12.5px;
+    color: var(--text-faint);
+    line-height: 1.6;
+}
+
+/* ─────────────────────────  sidebar footer  ──────────────────────── */
+
+.sidebar-foot {
+    padding: 14px 22px;
+    border-top: 1px solid var(--border-soft);
+}
+
+.btn {
+    width: 100%;
+    padding: 9px 14px;
+    border-radius: 9px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent-dim);
+    color: var(--accent);
+    transition: background .15s;
+}
+.btn:hover { background: rgba(0,200,255,.22); }
+.btn.ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+}
+.btn.ghost:hover { border-color: var(--accent-dim); color: var(--accent); }
+
+/* ────────────────────────  conversation header  ──────────────────── */
+
+.thread-head {
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border-soft);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+}
+.thread-head .who { font-size: 15px; font-weight: 600; }
+
+/* Quiet by design: blocking is something you look for when you need it,
+   not a button that sits there suggesting it. */
+.thread-head .head-action {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--text-faint);
+    padding: 5px 10px;
+    border-radius: 7px;
+    transition: color .15s, background .15s;
+}
+.thread-head .head-action:hover { color: var(--danger); background: rgba(255,107,107,.08); }
+.thread-head .head-action.undo:hover { color: var(--accent); background: var(--accent-dim); }
+.thread-head .id {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+}
+
+/* ───────────────────────────  messages  ──────────────────────────── */
+
+.thread {
+    flex: 1;
+    overflow-y: auto;
+    padding: 26px 28px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.msg { display: flex; margin-top: 9px; }
+.msg.out { justify-content: flex-end; }
+
+/* Consecutive messages from the same person tighten up, so a burst
+   reads as one thought rather than three separate events. */
+.msg.same { margin-top: 2px; }
+
+.bubble {
+    max-width: min(560px, 72%);
+    padding: 9px 13px;
+    border-radius: 13px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+    user-select: text;
+}
+.msg.in .bubble {
+    background: var(--bg-elev);
+    border: 1px solid var(--border-soft);
+    border-bottom-left-radius: 5px;
+}
+.msg.out .bubble {
+    background: rgba(0, 200, 255, .11);
+    border: 1px solid rgba(0, 200, 255, .18);
+    border-bottom-right-radius: 5px;
+}
+.msg.same.in  .bubble { border-bottom-left-radius: 13px;  border-top-left-radius: 5px; }
+.msg.same.out .bubble { border-bottom-right-radius: 13px; border-top-right-radius: 5px; }
+
+.stamp {
+    font-size: 10.5px;
+    color: var(--text-faint);
+    padding: 0 4px;
+    align-self: flex-end;
+    margin: 0 6px 2px;
+    opacity: 0;
+    transition: opacity .15s;
+}
+.msg:hover .stamp { opacity: 1; }
+
+.day {
+    align-self: center;
+    font-size: 11px;
+    color: var(--text-faint);
+    margin: 20px 0 6px;
+    letter-spacing: .3px;
+}
+
+/* ──────────────────────────  request bar  ────────────────────────── */
+
+/* Shown instead of the composer when someone hasn't been accepted yet.
+   The decision is the only thing on screen, which is the point: a
+   message request is a question, not a conversation. */
+.request-bar {
+    margin: 0 28px 22px;
+    padding: 18px 20px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.request-bar p {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+}
+.request-bar .actions { display: flex; gap: 10px; }
+.request-bar .btn { width: auto; padding: 8px 18px; }
+.btn.danger { background: transparent; border: 1px solid rgba(255,107,107,.25); color: var(--danger); }
+.btn.danger:hover { background: rgba(255,107,107,.10); }
+
+/* ───────────────────────────  composer  ──────────────────────────── */
+
+.composer {
+    padding: 16px 28px 22px;
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-shrink: 0;
+}
+.composer textarea {
+    flex: 1;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    padding: 11px 14px;
+    resize: none;
+    max-height: 140px;
+    outline: none;
+    font-size: 13.5px;
+    line-height: 1.5;
+    user-select: text;
+    transition: border-color .15s;
+}
+.composer textarea:focus { border-color: var(--accent-dim); }
+.composer textarea::placeholder { color: var(--text-faint); }
+
+.send {
+    width: 38px; height: 38px;
+    border-radius: 11px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background .15s, opacity .15s;
+}
+.send:hover { background: rgba(0,200,255,.24); }
+.send:disabled { opacity: .3; cursor: default; }
+.send svg { width: 16px; height: 16px; }
+
+/* ─────────────────────────  empty states  ────────────────────────── */
+
+.empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 40px;
+    gap: 10px;
+}
+.empty h2 { font-size: 17px; font-weight: 600; color: var(--text); }
+.empty p { font-size: 13.5px; color: var(--text-faint); max-width: 330px; line-height: 1.65; }
+
+/* ───────────────────────────  modal  ─────────────────────────────── */
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(3, 6, 14, .72);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+}
+.overlay[hidden] { display: none; }
+
+.modal {
+    width: 420px;
+    max-width: calc(100vw - 48px);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.modal h2 { font-size: 19px; font-weight: 600; }
+.modal p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+
+.field {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 14px;
+    outline: none;
+    font-size: 14px;
+    user-select: text;
+    transition: border-color .15s;
+}
+.field:focus { border-color: var(--accent-dim); }
+.field::placeholder { color: var(--text-faint); }
+.field.mono { font-family: var(--font-mono); font-size: 12px; }
+
+.modal .actions { display: flex; gap: 10px; justify-content: flex-end; }
+.modal .actions .btn { width: auto; padding: 9px 20px; }
+
+.note {
+    font-size: 12px;
+    color: var(--text-faint);
+    line-height: 1.55;
+}
+.error { font-size: 12.5px; color: var(--danger); min-height: 17px; }
+
+/* ───────────────────────────  toast  ─────────────────────────────── */
+
+.toast {
+    position: fixed;
+    bottom: 26px;
+    left: 50%;
+    transform: translateX(-50%) translateY(8px);
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    color: var(--text-dim);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s, transform .2s;
+    z-index: 200;
+}
+.toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ───────────────────────  sign-in gate & account  ────────────────── */
+
+/* A full-window screen that stands in for the app until there's an
+   account. Opaque, so nothing of a conversation shows behind it. */
+.gate {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    z-index: 150;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    overflow-y: auto;
+}
+.gate[hidden] { display: none; }
+
+.gate-card {
+    width: 360px;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 26px;
+}
+.gate-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.gate-brand .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--accent);
+}
+.gate-brand .dot.offline { background: var(--text-faint); }
+.gate-brand .word {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    letter-spacing: 3.5px;
+    color: var(--accent);
+}
+.gate-brand .suffix { font-size: 12px; color: var(--text-dim); margin-left: -4px; }
+
+.gate-form { display: flex; flex-direction: column; gap: 14px; }
+.gate-form[hidden] { display: none; }
+.gate-form h1 { font-size: 24px; font-weight: 600; letter-spacing: -.2px; }
+.gate-form p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+.gate-form .btn { padding: 11px 14px; font-size: 14px; }
+.gate-form .field.code { letter-spacing: 4px; font-family: var(--font-mono); }
+.gate-form .sel { user-select: text; color: var(--text); }
+.gate-foot { display: flex; justify-content: center; }
+
+.links { display: flex; justify-content: space-between; gap: 12px; }
+
+/* Text-only buttons: for secondary paths that shouldn't compete with the
+   one obvious action. */
+.link {
+    font-size: 12.5px;
+    color: var(--text-faint);
+    padding: 2px 0;
+    transition: color .15s;
+}
+.link:hover { color: var(--accent); }
+.link.inline { display: inline; font-size: inherit; color: var(--text-dim); text-decoration: underline; text-underline-offset: 2px; }
+
+.check {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    cursor: pointer;
+}
+.check input { margin-top: 3px; accent-color: var(--accent); flex: none; }
+
+.sidebar-foot { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.sidebar-foot .link { align-self: center; }
+
+.modal .stack { display: flex; flex-direction: column; gap: 14px; }
+.modal .stack[hidden] { display: none; }
+.modal.wide { width: 560px; max-height: calc(100vh - 64px); }
+textarea.field { resize: none; line-height: 1.5; }
+
+/* Account deletion: findable, but quiet. */
+.faint-row { display: flex; justify-content: center; margin-top: -4px; }
+.link.faint { font-size: 11.5px; color: var(--text-faint); opacity: .7; }
+.link.faint:hover { color: var(--danger); opacity: 1; }
+.del-list { display: flex; flex-direction: column; gap: 8px; padding-left: 18px; margin: 0; }
+.del-list li { font-size: 13px; color: var(--text-dim); line-height: 1.55; }
+#delete-modal .field.code { letter-spacing: 4px; font-family: var(--font-mono); }
+#delete-modal .stack[hidden], #del-actions[hidden] { display: none; }
+
+.gate-reason { color: var(--text-dim); }
+
+/* A new version is out. */
+.update-bar { margin: 8px 16px 0; padding: 12px; border: 1px solid var(--accent-dim); border-radius: 10px; display: flex; flex-direction: column; gap: 10px; }
+.update-bar[hidden] { display: none; }
+.update-text { font-size: 12.5px; color: var(--text-dim); line-height: 1.5; }
+.update-text strong { color: var(--text); font-weight: 600; }
+.update-bar .btn { padding: 7px 12px; font-size: 12.5px; }
+.faint-row { gap: 14px; }
+.faint-text { font-size: 11.5px; color: var(--text-faint); opacity: .7; }
+
+.kv { display: flex; justify-content: space-between; gap: 16px; font-size: 13px; color: var(--text-dim); }
+.kv strong { color: var(--text); font-weight: 500; user-select: text; overflow-wrap: anywhere; text-align: right; }
+
+/* The terms are prose, and long: they scroll inside the modal. */
+.doc {
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.65;
+    user-select: text;
+    padding-right: 6px;
+}
+.doc h3 { font-size: 13.5px; font-weight: 600; color: var(--text); margin: 18px 0 4px; }
+.doc h3:first-child { margin-top: 0; }
+.doc p + p { margin-top: 8px; }
+.doc ul { margin: 6px 0 0 18px; }
+.doc li { margin-top: 3px; }
+
+/* ───────────────────────────  voice call bar  ────────────────────── */
+
+.callbar {
+    position: fixed;
+    top: 16px;
+    /* Centred with auto margins rather than left:50% + translate: the latter
+       only leaves half the window for the bar to lay itself out in, which
+       squeezed the name and wrapped the buttons on narrow windows. */
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    width: max-content;
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 12px 10px 18px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, .45);
+    max-width: calc(100vw - 32px);
+}
+.callbar[hidden] { display: none; }
+.callbar .who { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; min-width: 2em; }
+.callbar .status { font-size: 12.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.callbar.live .status { color: var(--ok); }
+.callbar .btns { display: flex; gap: 8px; }
+.callbar .cbtn {
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-size: 12.5px;
+    font-weight: 500;
+    padding: 7px 15px;
+    border-radius: 999px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    transition: background .15s;
+}
+.callbar .cbtn:hover { background: rgba(0,200,255,.22); }
+.callbar .cbtn.quiet { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+.callbar .cbtn.quiet.on { color: var(--accent); border-color: var(--accent-dim); }
+.callbar .cbtn.end { background: rgba(255,107,107,.14); color: var(--danger); }
+.callbar .cbtn.end:hover { background: rgba(255,107,107,.24); }
+
+.thread-head .head-action.call { display: inline-flex; align-items: center; gap: 6px; }
+.thread-head .head-action.call svg { width: 14px; height: 14px; }
+.thread-head .head-action.call:hover { color: var(--accent); background: var(--accent-dim); }
+
+/* ───────────────────────────  video stage  ───────────────────────── */
+
+/* Full-window while a camera is on: the other person large, yourself small
+   in the corner, and the call bar as the controls along the bottom. */
+.stage {
+    position: fixed;
+    inset: 0;
+    z-index: 110;
+    background: #03060e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.stage[hidden] { display: none; }
+.stage video[hidden] { display: none; }
+#remote-video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    background: #03060e;
+}
+#local-video {
+    position: absolute;
+    right: 20px;
+    bottom: 88px;
+    width: min(240px, 28vw);
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: var(--bg-panel);
+    transform: scaleX(-1); /* a mirror, the way people expect to see themselves */
+}
+.stage-wait { text-align: center; }
+.stage-wait[hidden] { display: none; }
+.stage-name { font-size: 22px; font-weight: 600; }
+.stage-sub { font-size: 13px; color: var(--text-faint); margin-top: 4px; }
+
+.callbar.staged {
+    top: auto;
+    bottom: 22px;
+    z-index: 130;
+}
+
+/* ─────────────────────  messages on their way  ───────────────────── */
+
+/* Shown the instant it's sent; a touch fainter until it's stored. The
+   difference is deliberately small -- it's usually under a fifth of a
+   second, and a flicker of state would be noise. */
+.msg.pending .bubble { opacity: .62; transition: opacity .2s; }
+.msg.failed .bubble { opacity: .7; border: 1px solid rgba(255,107,107,.35); }
+.stamp.retry {
+    opacity: 1;
+    color: var(--danger);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.stamp.retry:hover { text-decoration: underline; }
+
+/* ──────────────────────  typing and delivered  ───────────────────── */
+
+.preview.typing { color: var(--accent); }
+
+.receipt {
+    align-self: flex-end;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    margin: 3px 10px 0 0;
+}
+
+/* Three dots that breathe, in an incoming bubble: the other person is
+   writing. Quiet on purpose -- it's company, not an alert. */
+.typing-row .bubble.dots {
+    display: inline-flex;
+    gap: 4px;
+    padding: 11px 13px;
+}
+.typing-row .dots span {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    opacity: .35;
+    animation: breathe 1.2s infinite ease-in-out;
+}
+.typing-row .dots span:nth-child(2) { animation-delay: .15s; }
+.typing-row .dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes breathe {
+    0%, 80%, 100% { opacity: .25; transform: translateY(0); }
+    40%           { opacity: .9;  transform: translateY(-2px); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .typing-row .dots span { animation: none; opacity: .6; }
+}
+
+/* ───────────────────────────────  groups  ─────────────────────────── */
+
+/* A group's avatar is round and faintly tinted, where a person's is a
+   square: the one cue that says "several people" without adding an icon. */
+.avatar.group { border-radius: 50%; background: var(--accent-dim); color: var(--accent); border-color: transparent; }
+
+.foot-links { display: flex; justify-content: space-between; padding: 0 4px; }
+
+/* Who said it, once per run of messages from the same person. */
+.speaker {
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin: 10px 0 -5px 4px;
+}
+/* Notes about the group itself, centred and quiet. */
+.sysline {
+    align-self: center;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    margin: 10px 0 2px;
+    text-align: center;
+}
+
+.empty .actions { display: flex; gap: 10px; justify-content: center; margin-top: 6px; }
+.empty .actions .btn { width: auto; padding: 9px 22px; }
+
+.members { display: flex; flex-direction: column; gap: 6px; max-height: 300px; overflow-y: auto; }
+.member { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.member .avatar { width: 30px; height: 30px; font-size: 12px; }
+.member .mname { flex: 1; font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member .tag { font-size: 10.5px; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 6px; padding: 1px 6px; }
+.row-input { display: flex; gap: 8px; }
+.row-input[hidden] { display: none; }
+.row-input .btn { width: auto; padding: 9px 18px; }
+
+/* ─────────────────────────────  group calls  ─────────────────────── */
+
+/* Everyone in a tile; the grid reflows for two to eight people. A tile with
+   the camera off shows the name, quietly. */
+.stage-grid {
+    position: absolute;
+    inset: 16px 16px 84px;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(2, 1fr);
+    grid-auto-rows: 1fr;
+}
+.stage-grid[hidden] { display: none; }
+.stage-grid[data-count="1"] { grid-template-columns: 1fr; }
+.stage-grid[data-count="5"], .stage-grid[data-count="6"] { grid-template-columns: repeat(3, 1fr); }
+.stage-grid[data-count="7"], .stage-grid[data-count="8"] { grid-template-columns: repeat(4, 1fr); }
+.tile {
+    position: relative;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+.tile video { width: 100%; height: 100%; object-fit: cover; }
+.tile video[hidden] { display: none; }
+.tile.me video { transform: scaleX(-1); }
+.tile .tname { font-size: 15px; font-weight: 600; color: var(--text-dim); }
+.tile.cam .tname {
+    position: absolute;
+    left: 10px; bottom: 8px;
+    font-size: 12px;
+    color: var(--text);
+    background: rgba(3,6,14,.6);
+    padding: 2px 8px;
+    border-radius: 6px;
+}
+
+/* "A call is going on here": a thin bar under the group's header. */
+.call-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 22px;
+    border-bottom: 1px solid var(--border-soft);
+    background: rgba(40,200,120,.06);
+    font-size: 12.5px;
+    color: var(--ok);
+}
+.call-banner span { flex: 1; }
+.call-banner .cbtn {
+    font-size: 12px; padding: 6px 14px; border-radius: 999px;
+    background: var(--accent-dim); color: var(--accent);
+}
+.call-banner .cbtn.quiet { background: transparent; border: 1px solid var(--border); color: var(--text-dim); }
+
+/* ────────────────────────  personal / business  ───────────────────── */
+
+/* One account, two sides. A segmented switch under your name: the side you
+   are on is lit, and the other carries a dot when something there needs
+   you. Nothing else about the window changes shape. */
+.modeswitch {
+    display: flex;
+    gap: 2px;
+    margin: 14px 18px 4px;
+    padding: 3px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+}
+.modeswitch button {
+    flex: 1;
+    position: relative;
+    padding: 6px 8px;
+    border-radius: 7px;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--text-faint);
+    transition: color .15s, background .15s;
+}
+.modeswitch button:hover { color: var(--text-dim); }
+.modeswitch button.on { background: var(--accent-dim); color: var(--accent); }
+.modeswitch .pip {
+    display: inline-block;
+    min-width: 16px;
+    height: 16px;
+    margin-left: 6px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--accent);
+    color: var(--bg);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 16px;
+    vertical-align: 1px;
+}
+.modeswitch .pip[hidden] { display: none; }
+
+/* The workspace you are in, at the top of the Business list. */
+.wsbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - 28px);
+    margin: 2px 14px 4px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    text-align: left;
+    transition: background .12s;
+}
+.wsbar:hover { background: rgba(255,255,255,.03); }
+.wsbar .avatar { border-radius: 9px; background: var(--accent-dim); color: var(--accent); border-color: transparent; }
+.wsbar .wsname { flex: 1; min-width: 0; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsbar .caret { color: var(--text-faint); display: flex; transition: transform .15s; }
+.wsbar .caret svg { width: 14px; height: 14px; }
+.wsbar .caret.open { transform: rotate(180deg); }
+.wsmenu { margin: 0 14px 6px; padding: 4px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-input); }
+.wsmenu button {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 7px 10px; border-radius: 7px; text-align: left;
+    font-size: 13px; color: var(--text-dim);
+}
+.wsmenu button:hover { background: rgba(255,255,255,.04); color: var(--text); }
+.wsmenu button.here { color: var(--accent); }
+.wsmenu button .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wsmenu .unread {
+    min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+    background: var(--accent); color: var(--bg); font-size: 10.5px; font-weight: 700; line-height: 18px; text-align: center;
+}
+
+/* A channel's mark is a hash, in the same square as a person's initial. */
+.avatar.hash { font-size: 15px; font-weight: 500; color: var(--text-faint); background: transparent; }
+.row.active .avatar.hash { color: var(--accent); }
+.row.person { padding-top: 6px; padding-bottom: 6px; }
+.row.person .avatar { width: 26px; height: 26px; font-size: 11px; }
+.row .tag, .member .tag.quiet {
+    font-size: 10.5px; color: var(--text-faint); border: 1px solid var(--border-soft);
+    border-radius: 6px; padding: 1px 6px; flex-shrink: 0;
+}
+.member .tag.quiet { color: var(--text-faint); border-color: var(--border); }
+.thread-head .who .hash { color: var(--text-faint); margin-right: 2px; font-weight: 500; }
+
+/* New channel: pick people from the workspace. */
+.pick-head { display: flex; justify-content: space-between; align-items: center; font-size: 12.5px; color: var(--text-dim); }
+.picklist { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow-y: auto; margin: -6px 0 0; }
+.picklist .check { padding: 6px 4px; border-radius: 7px; align-items: center; }
+.picklist .check:hover { background: rgba(255,255,255,.03); }
+.picklist .check input { margin-top: 0; }
+.picklist .none { font-size: 12.5px; color: var(--text-faint); padding: 6px 4px; line-height: 1.5; }
+
+/* ─────────────────────────────  the tour  ─────────────────────────── */
+
+.tour .tour-card {
+    width: 540px;
+    max-width: calc(100vw - 48px);
+    max-height: calc(100vh - 48px);
+    overflow-y: auto;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 0 34px 26px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.tour-art {
+    margin: 0 -34px 6px;
+    height: 150px;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 120%, rgba(0,200,255,.10), transparent 70%);
+    border-bottom: 1px solid var(--border-soft);
+    border-radius: 20px 20px 0 0;
+    color: var(--accent);
+}
+.tour-art svg { width: 300px; height: 120px; overflow: visible; }
+.tour-art .dim { color: var(--text-faint); }
+.tour h2 { font-size: 21px; font-weight: 600; letter-spacing: -.2px; }
+.tour p { font-size: 13.5px; color: var(--text-dim); line-height: 1.65; }
+.tour-points { list-style: none; display: flex; flex-direction: column; gap: 7px; margin: 2px 0 4px; }
+.tour-points li {
+    position: relative; padding-left: 18px;
+    font-size: 13px; color: var(--text-dim); line-height: 1.55;
+}
+.tour-points li::before {
+    content: ''; position: absolute; left: 3px; top: 8px;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--accent); opacity: .8;
+}
+.tour-dots { display: flex; gap: 6px; justify-content: center; margin: 8px 0 2px; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--border); transition: background .2s, width .2s; }
+.tour-dots i.on { width: 18px; border-radius: 3px; background: var(--accent); }
+.tour-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.tour-actions .spacer { flex: 1; }
+.tour-actions .btn { width: auto; padding: 9px 20px; }
+.tour-actions .btn[hidden], .tour-actions .link[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .tour-dots i { transition: none; } }
+
+/* The Account dialog's background settings. */
+.modal .settings { gap: 10px; padding: 12px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); }
+.modal .settings .row-input { flex-wrap: wrap; }
+.modal .settings .row-input .btn { padding: 8px 14px; font-size: 12.5px; }
+.modal .settings .check[hidden] { display: none; }
+
+/* Account has grown a few buttons: let them sit on a line each if they must. */
+#account-modal .modal { width: 480px; }
+#account-modal .actions { flex-wrap: wrap; justify-content: flex-end; }
+#account-modal .actions .btn { white-space: nowrap; padding: 8px 14px; }
+
+/* Reports waiting for a workspace's owner, at the top of People. */
+.modal .wsreports { gap: 10px; max-height: 300px; overflow-y: auto; }
+.modal .wsreports .section-label { padding: 0; }
+.wsreport { border: 1px solid rgba(255,107,107,.18); border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.wsr-head { font-size: 13px; color: var(--text-dim); }
+.wsr-head strong { color: var(--text); font-weight: 600; }
+.wsr-when { color: var(--text-faint); font-size: 11.5px; }
+.wsr-reason { font-size: 13px; color: var(--text); user-select: text; }
+.wsr-ev { list-style: none; display: flex; flex-direction: column; gap: 3px; margin: 2px 0; padding-left: 8px; border-left: 2px solid var(--border); }
+.wsr-ev li { font-size: 12px; color: var(--text-dim); user-select: text; }
+.wsr-where { color: var(--text-faint); margin-right: 6px; font-size: 11px; }
+.wsr-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.wsr-actions .btn { width: auto; padding: 6px 12px; font-size: 12px; }
+.thread-head .head-action.report-flag { margin-left: auto; color: var(--danger); }

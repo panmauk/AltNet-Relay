@@ -1,0 +1,16 @@
+# AltNet backend (accounts / domain approvals / abuse reports).
+# Caddy terminates HTTPS and proxies to the localhost-only backend.
+# A Let's Encrypt cert is provisioned automatically once api.panmox.org
+# resolves to this server's public IP.
+#
+# /relay/* goes to the Relay server (localhost:8788), with the /relay prefix
+# removed. Everything else goes to the accounts backend exactly as before.
+api.panmox.org {
+	encode gzip
+	handle_path /relay/* {
+		reverse_proxy 127.0.0.1:8788
+	}
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
+}

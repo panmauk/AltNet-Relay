@@ -1,0 +1,13 @@
+# Build output and release files (uploaded to GitHub Releases instead)
+dist/
+*.exe
+app/desktop/build/bin/
+
+# Videos
+demo/
+
+# Local tool settings
+.claude/
+
+# Never commit keys
+*.key
