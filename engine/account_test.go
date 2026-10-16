@@ -468,7 +468,9 @@ func TestOfflineKeepsSavedSession(t *testing.T) {
 }
 
 // A person can't put two accounts on one identity: that would let a banned
-// person walk back in by making a new email address.
+// person walk back in by making a new email address. The server refuses; the
+// app then gives the new account keys of its own (see
+// TestASecondAccountOnTheSameComputerGetsItsOwnKeys).
 func TestSecondAccountCannotUseSameIdentity(t *testing.T) {
 	w := newWorld(t)
 	dir := t.TempDir()
@@ -476,20 +478,19 @@ func TestSecondAccountCannotUseSameIdentity(t *testing.T) {
 	w.signUp(rob, "rob@example.com")
 	rob.SignOut()
 
-	err := rob.SignUp("other@example.com", "hunter22")
+	if err := rob.SignUp("other@example.com", "hunter22"); err != nil {
+		t.Fatal(err)
+	}
+	if err := rob.VerifyEmail("other@example.com", w.studio.verifyOK); !errors.Is(err, ErrRestart) {
+		t.Fatalf("got %v", err)
+	}
+	ctx := context.Background()
+	sess, err := w.acct.Login(ctx, "other@example.com", "hunter22")
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = rob.VerifyEmail("other@example.com", w.studio.verifyOK)
-	if err == nil || !strings.Contains(err.Error(), "already belongs") {
-		t.Fatalf("second account on the same identity should be refused, got %v", err)
-	}
-	if g := rob.Account().Gate; g != GateSignedOut {
-		t.Fatalf("gate = %q after refused sign-in", g)
-	}
-	// The original owner can still come back.
-	if err := rob.SignIn("rob@example.com", "hunter22"); err != nil {
-		t.Fatal(err)
+	if err := w.acct.Bind(ctx, sess.Token, rob.ID); !account.IsConflict(err) {
+		t.Fatalf("the server must refuse a second account on the same identity, got %v", err)
 	}
 }
 

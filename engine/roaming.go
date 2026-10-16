@@ -56,7 +56,7 @@ var CopyCheckEvery = 20 * time.Second
 var (
 	// ErrRestart: the account's copy is unpacked and the app must restart to
 	// use it. The sign-in itself succeeded.
-	ErrRestart = errors.New("bringing your account to this computer; AltNet Relay restarts once")
+	ErrRestart = errors.New("setting up your account on this computer; AltNet Relay restarts once")
 	// ErrNoCopy: the account is set up on another computer and there is no
 	// copy to bring here. The person can start fresh (StartFresh).
 	ErrNoCopy = errors.New("your account is set up on another computer, and it isn't keeping a copy to bring here")
@@ -184,6 +184,14 @@ func (e *Engine) arrive(ctx context.Context, sess *account.Session, password str
 			return err
 		}
 	}
+	// An account with no keys yet, on a computer whose keys belong to another
+	// account (someone else used Relay here before): this account gets keys of
+	// its own.
+	if err == nil && !me.Banned && me.Username == "" && !fresh {
+		if berr := e.acct.Bind(ctx, sess.Token, e.ID); account.IsConflict(berr) {
+			return e.newKeysHere(ctx, sess, password)
+		}
+	}
 	if err == nil && !me.Banned {
 		if err := e.claim(ctx, sess.Token); err != nil && !account.Unreachable(err) {
 			return err
@@ -249,6 +257,49 @@ func (e *Engine) bringCopy(ctx context.Context, sess *account.Session, password 
 	}
 	e.acctMu.Lock()
 	err = e.saveSession(sess)
+	e.acctMu.Unlock()
+	if err != nil {
+		return err
+	}
+	return ErrRestart
+}
+
+// newKeysHere makes a new Relay identity for an account signing in on a
+// computer whose identity belongs to another account. It waits in restoreDir
+// like a brought copy: the next Open puts it in place and keeps the other
+// account's keys and conversations aside in previousDir.
+func (e *Engine) newKeysHere(ctx context.Context, sess *account.Session, password string) error {
+	dst := filepath.Join(e.dataDir, restoreDir)
+	_ = os.RemoveAll(dst)
+	work := filepath.Join(dst, "new")
+	if err := os.MkdirAll(work, 0o700); err != nil {
+		return err
+	}
+	if _, err := mailbox.LoadOrCreateIdentity(work); err != nil {
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	if k, err := backup.NewKey(password); err == nil {
+		if blob, err := json.Marshal(k); err == nil {
+			_ = os.WriteFile(filepath.Join(dst, copyKeyFile), blob, 0o600)
+		}
+	}
+	// The identity last: its presence is what marks the restore complete.
+	if err := os.Rename(filepath.Join(work, mailbox.BoxKeyFileName), filepath.Join(dst, mailbox.BoxKeyFileName)); err != nil {
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	if err := os.Rename(filepath.Join(work, mailbox.IdentityFileName), filepath.Join(dst, mailbox.IdentityFileName)); err != nil {
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	_ = os.RemoveAll(work)
+	if err := e.claim(ctx, sess.Token); err != nil {
+		_ = os.RemoveAll(dst)
+		return err
+	}
+	e.acctMu.Lock()
+	err := e.saveSession(sess)
 	e.acctMu.Unlock()
 	if err != nil {
 		return err

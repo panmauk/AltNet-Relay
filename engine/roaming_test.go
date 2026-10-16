@@ -2,10 +2,12 @@ package engine
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"altnet-relay/mailbox"
 	"altnet-relay/server"
 )
 
@@ -158,5 +160,39 @@ func TestTurningTheCopyOffDeletesIt(t *testing.T) {
 	second := w.engine(t.TempDir())
 	if err := second.SignIn("rob@example.com", "hunter22"); !errors.Is(err, ErrNoCopy) {
 		t.Fatalf("with the copy off there is nothing to bring, got %v", err)
+	}
+}
+
+// Someone else used Relay on this computer before: a new account signing in
+// here gets keys of its own instead of being refused, and the other account's
+// keys are kept aside.
+func TestASecondAccountOnTheSameComputerGetsItsOwnKeys(t *testing.T) {
+	w := newWorld(t)
+	dir := t.TempDir()
+	first := w.engine(dir)
+	w.signUp(first, "test2@example.com")
+	oldID := first.Username()
+	if err := first.SignOut(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := first.SignUp("user@example.com", "hunter22"); err != nil {
+		t.Fatal(err)
+	}
+	if err := first.VerifyEmail("user@example.com", w.studio.verifyOK); !errors.Is(err, ErrRestart) {
+		t.Fatalf("a second account here should get new keys after a restart, got %v", err)
+	}
+	first.Close()
+	second := w.engine(dir) // what the app's restart does
+
+	if second.Username() == oldID {
+		t.Fatal("the second account must not use the first account's keys")
+	}
+	if g := second.Account().Gate; g != GateOK {
+		t.Fatalf("signed in with new keys, gate = %+v", second.Account())
+	}
+	kept, _ := filepath.Glob(filepath.Join(dir, previousDir, "*", mailbox.IdentityFileName))
+	if len(kept) != 1 {
+		t.Fatalf("the first account's keys should be kept aside, found %v", kept)
 	}
 }

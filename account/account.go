@@ -86,6 +86,13 @@ func IsForbidden(err error) bool {
 	return errors.As(err, &e) && e.Status == http.StatusForbidden
 }
 
+// IsConflict reports a refusal because something is already taken, such as a
+// Relay identity that belongs to another account.
+func IsConflict(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && e.Status == http.StatusConflict
+}
+
 // Unreachable reports that the service couldn't be contacted at all (offline,
 // server down), as opposed to answering "no".
 func Unreachable(err error) bool {
