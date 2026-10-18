@@ -31,6 +31,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"altnet-relay/account"
 	"altnet-relay/server"
@@ -159,14 +160,26 @@ func printReport(r server.Report) {
 		who = "@" + r.ReportedHandle + "  (" + who + ")"
 	}
 	fmt.Printf("#%d  [%s]  %s\n", r.ID, r.Status, time.Unix(r.CreatedAt, 0).Format("2006-01-02 15:04"))
-	fmt.Printf("  reported: %s\n  by:       %s\n  reason:   %s\n", who, r.ReporterEmail, r.Reason)
+	fmt.Printf("  reported: %s\n  by:       %s\n  reason:   %s\n", printable(who), printable(r.ReporterEmail), printable(r.Reason))
 	for _, m := range r.Evidence {
-		fmt.Printf("    %-4s %s  %s\n", m.From, time.Unix(m.Sent, 0).Format("01-02 15:04"), m.Text)
+		fmt.Printf("    %-4s %s  %s\n", printable(m.From), time.Unix(m.Sent, 0).Format("01-02 15:04"), printable(m.Text))
 	}
 	if r.DecidedBy != "" {
-		fmt.Printf("  decided by %s: %s\n", r.DecidedBy, r.Note)
+		fmt.Printf("  decided by %s: %s\n", printable(r.DecidedBy), printable(r.Note))
 	}
 	fmt.Println()
+}
+
+// printable makes text someone else wrote safe to print in a terminal: a
+// report's reason and messages come from users, and control characters
+// (escape sequences) could otherwise rewrite what the operator sees.
+func printable(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || unicode.Is(unicode.Cf, r) {
+			return ' '
+		}
+		return r
+	}, s)
 }
 
 func cmdDecide(args []string) error {

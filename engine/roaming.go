@@ -188,7 +188,7 @@ func (e *Engine) arrive(ctx context.Context, sess *account.Session, password str
 	// account (someone else used Relay here before): this account gets keys of
 	// its own.
 	if err == nil && !me.Banned && me.Username == "" && !fresh {
-		if berr := e.acct.Bind(ctx, sess.Token, e.ID); account.IsConflict(berr) {
+		if berr := e.acct.Bind(ctx, sess.Token, e.ID); account.IdentityTaken(berr) {
 			return e.newKeysHere(ctx, sess, password)
 		}
 	}

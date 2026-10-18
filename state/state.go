@@ -211,8 +211,10 @@ func (s *State) Save() error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
 
+	// Compact, not indented: the file is rewritten on every message, and
+	// indenting made it (and the account's locked copy) a third bigger.
 	s.mu.Lock()
-	blob, err := json.MarshalIndent(&s.d, "", "  ")
+	blob, err := json.Marshal(&s.d)
 	s.mu.Unlock()
 	if err != nil {
 		return err
@@ -232,7 +234,7 @@ func (s *State) Save() error {
 func (s *State) Snapshot() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return json.MarshalIndent(&s.d, "", "  ")
+	return json.Marshal(&s.d)
 }
 
 // Conversation returns the stored conversation for peerID, creating an

@@ -6,13 +6,14 @@
 #
 #   wsl -d Ubuntu -u root -- bash scripts/build-linux.sh
 #
-# Output goes to dist/ next to the Windows installer. Set ALTNET_CORE to the
-# AltNet core repository root (the folder that contains core/ and go.mod).
+# Output goes to dist/ next to the Windows installer. The AltNet core is read
+# from ../AltNet (a clone of github.com/panmauk/AltNet next to this folder),
+# or from ALTNET_CORE.
 set -euo pipefail
 export PATH=/usr/local/go/bin:$HOME/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
-CORE="${ALTNET_CORE:-}"
+CORE="${ALTNET_CORE:-$HERE/../AltNet}"
 VER="$(sed -n 's/.*"productVersion": "\(.*\)".*/\1/p' "$HERE/app/desktop/wails.json")"
 WORK="$HOME/relay-linux-build"
 OUT="$HERE/dist"

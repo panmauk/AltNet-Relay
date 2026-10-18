@@ -41,3 +41,4 @@ require (
 
 replace altnet-relay => ../..
 
+replace altnet => ../../../AltNet

@@ -663,6 +663,11 @@ func (e *Engine) SendGroup(id, text string) (state.GroupMessage, error) {
 	if !ok || g.Status != state.GroupJoined {
 		return state.GroupMessage{}, errNotInGroup
 	}
+	if e.groupBacklogged(id) {
+		// Shown as not sent, with Retry, rather than looking sent and never
+		// leaving.
+		return state.GroupMessage{}, errGroupBacklog
+	}
 	m := state.GroupMessage{ID: newID(), From: e.Username(), Outbound: true, Text: text, Sent: time.Now().Unix()}
 	e.State.AddGroupMessage(id, m)
 	_ = e.State.Save()
@@ -712,6 +717,20 @@ type groupJob struct {
 	wire groupWire
 }
 
+// groupQueueSize is how many group messages may wait to go out per group.
+const groupQueueSize = 1024
+
+var errGroupBacklog = errors.New("too many messages are still waiting to go out in this group; try again once you're back online")
+
+// groupBacklogged reports that a group's send queue is nearly full: a new
+// message is refused there, leaving room for membership changes.
+func (e *Engine) groupBacklogged(id string) bool {
+	e.groupMu.Lock()
+	defer e.groupMu.Unlock()
+	q, ok := e.groupQueues[id]
+	return ok && len(q) >= groupQueueSize-64
+}
+
 // fanOut queues one group message for every member in to. Each group has
 // one worker, so a group's messages leave in the order they were written;
 // within one message, every member is sent to at the same time.
@@ -722,7 +741,7 @@ func (e *Engine) fanOut(id string, to []string, w groupWire) {
 	e.groupMu.Lock()
 	q, ok := e.groupQueues[id]
 	if !ok {
-		q = make(chan groupJob, 256)
+		q = make(chan groupJob, groupQueueSize)
 		e.groupQueues[id] = q
 		go e.groupWorker(q)
 	}
@@ -730,9 +749,10 @@ func (e *Engine) fanOut(id string, to []string, w groupWire) {
 	select {
 	case q <- groupJob{to: to, wire: w}:
 	default:
-		// Hundreds of messages queued for one group means the network has
-		// been gone for a while; the oldest-first order matters more than
-		// any one message, so drop rather than reorder.
+		// A thousand messages queued for one group means the network has
+		// been gone for a long while; the oldest-first order matters more
+		// than any one message, so drop rather than reorder. (New chat
+		// messages are refused well before this; see groupBacklogged.)
 	}
 }
 
@@ -897,6 +917,9 @@ func (e *Engine) groupInvite(from string, w groupWire) {
 		// the one who runs it, trying to take over a group we left.
 		return
 	}
+	if !ok && !e.roomForInvite(from) {
+		return
+	}
 	err := e.State.UpdateGroup(w.G, true, func(g *state.Group) error {
 		g.Name, g.Admin, g.Members, g.Version = strings.TrimSpace(s.Name), s.Admin, s.Members, s.V
 		g.Status, g.InvitedBy = state.GroupInvited, from
@@ -918,6 +941,36 @@ func (e *Engine) groupInvite(from string, w groupWire) {
 	if s.Kind == state.KindWorkspace {
 		e.checkEarlyChannels(w.G) // channels that were added before the workspace invitation came
 	}
+}
+
+// Limits on invitations waiting from people who aren't contacts or coworkers.
+// Anyone who knows an @name can invite, and identities cost nothing, so each
+// sender gets a couple and all of them together a few dozen; the rest are
+// dropped unseen.
+const (
+	maxInvitesPerStranger = 2
+	maxStrangerInvites    = 20
+)
+
+// roomForInvite says whether a new invitation from from may be kept.
+func (e *Engine) roomForInvite(from string) bool {
+	if e.State.IsContact(from) || e.isCoworker(from) {
+		return true
+	}
+	total, theirs := 0, 0
+	for _, g := range e.State.GroupsMeta() {
+		if g.Status != state.GroupInvited || g.Kind == state.KindChannel {
+			continue
+		}
+		if e.State.IsContact(g.InvitedBy) || e.isCoworker(g.InvitedBy) {
+			continue
+		}
+		total++
+		if g.InvitedBy == from {
+			theirs++
+		}
+	}
+	return theirs < maxInvitesPerStranger && total < maxStrangerInvites
 }
 
 // mergeJoined combines what we knew about who accepted a workspace with an

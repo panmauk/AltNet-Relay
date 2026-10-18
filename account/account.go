@@ -68,6 +68,7 @@ func New(studioURL, relayURL string) *Client {
 type Error struct {
 	Status  int
 	Message string
+	Code    string // set by relay-server for refusals the app acts on
 }
 
 func (e *Error) Error() string { return e.Message }
@@ -91,6 +92,20 @@ func IsForbidden(err error) bool {
 func IsConflict(err error) bool {
 	var e *Error
 	return errors.As(err, &e) && e.Status == http.StatusConflict
+}
+
+// IdentityTaken reports that the Relay identity being attached belongs to
+// another account. (A server from before the codes existed only says so in
+// words.)
+func IdentityTaken(err error) bool {
+	var e *Error
+	if !errors.As(err, &e) || e.Status != http.StatusConflict {
+		return false
+	}
+	if e.Code != "" {
+		return e.Code == "identity_taken"
+	}
+	return strings.Contains(e.Message, "already belongs to another account")
 }
 
 // Unreachable reports that the service couldn't be contacted at all (offline,
@@ -363,7 +378,7 @@ func (c *Client) raw(ctx context.Context, method, path, token, device string, bo
 		return nil, resp.StatusCode, fmt.Errorf("the copy was cut off on the way; try again")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, resp.StatusCode, &Error{Status: resp.StatusCode, Message: errorText(resp.StatusCode, out)}
+		return nil, resp.StatusCode, &Error{Status: resp.StatusCode, Message: errorText(resp.StatusCode, out), Code: errorCode(out)}
 	}
 	return out, resp.StatusCode, nil
 }
@@ -400,7 +415,7 @@ func (c *Client) call(ctx context.Context, base, method, path, token string, in,
 		return fmt.Errorf("the account service's answer was cut off; try again")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return &Error{Status: resp.StatusCode, Message: errorText(resp.StatusCode, raw)}
+		return &Error{Status: resp.StatusCode, Message: errorText(resp.StatusCode, raw), Code: errorCode(raw)}
 	}
 	if out == nil || len(bytes.TrimSpace(raw)) == 0 {
 		return nil
@@ -409,6 +424,17 @@ func (c *Client) call(ctx context.Context, base, method, path, token string, in,
 		return fmt.Errorf("the account service sent something unexpected; try again later")
 	}
 	return nil
+}
+
+// errorCode pulls relay-server's {"code": "..."}, if there is one.
+func errorCode(raw []byte) string {
+	var e struct {
+		Code string `json:"code"`
+	}
+	if json.Unmarshal(raw, &e) != nil || len(e.Code) > 64 {
+		return ""
+	}
+	return e.Code
 }
 
 // errorText pulls the {"error": "..."} message both services use. Anything

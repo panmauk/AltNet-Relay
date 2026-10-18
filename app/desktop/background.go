@@ -30,6 +30,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode"
 
 	goruntime "runtime"
 
@@ -320,9 +321,43 @@ func (a *App) toast(body, peerID string) error {
 	return runtime.SendNotification(a.ctx, runtime.NotificationOptions{
 		ID:    fmt.Sprintf("relay-%d", time.Now().UnixNano()),
 		Title: "AltNet Relay",
-		Body:  body,
+		Body:  toastText(body),
 		Data:  data,
 	})
+}
+
+// maxToastText bounds a notification's text.
+const maxToastText = 200
+
+// toastText keeps only plain characters in a notification's text. Group,
+// workspace and channel names are chosen by whoever sends the invitation, and
+// on Windows the notification library puts the text into XML without escaping
+// it; when Windows rejects that XML, the library falls back to a PowerShell
+// script in which "$(...)" runs as a command. So letters, digits, spaces and
+// harmless punctuation only: no $ ` " < > & [ ], and no line breaks.
+func toastText(s string) string {
+	var b strings.Builder
+	space := false
+	n := 0
+	for _, r := range s {
+		if n >= maxToastText {
+			break
+		}
+		ok := unicode.IsLetter(r) || unicode.IsDigit(r) || strings.ContainsRune(".,:;!?'-#@()/·", r)
+		if !ok {
+			// Anything else, whitespace included, becomes one space.
+			if !space && b.Len() > 0 {
+				b.WriteByte(' ')
+				space = true
+				n++
+			}
+			continue
+		}
+		b.WriteRune(r)
+		space = false
+		n++
+	}
+	return strings.TrimSpace(b.String())
 }
 
 // shouldAlert: notifications are on and the window isn't being looked at.
@@ -416,9 +451,11 @@ func (a *App) alertInvited(groupID string) {
 	if !ok {
 		return
 	}
-	body := "You're invited to " + g.Name
+	// Named by who sent it, not by the group's name: anyone can invite, and
+	// the name is whatever they typed. The window shows it once opened.
+	body := e.Name(g.InvitedBy) + " invited you to a group"
 	if g.Kind == state.KindWorkspace {
-		body = "You're invited to the workspace " + g.Name
+		body = e.Name(g.InvitedBy) + " invited you to a workspace"
 	}
 	a.alert(groupPrefix+groupID, body, false)
 }

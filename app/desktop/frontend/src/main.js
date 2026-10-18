@@ -260,7 +260,11 @@ function mockBackend() {
         live: false,
         account: () => delay({ ...acct }),
         signUp: (email, pw) => email.includes('taken') ? fail('email already registered') : delay(),
-        verifyEmail: (email, code) => code === '424242' ? signedIn(email) : fail('invalid email or code'),
+        // Sign up as someone@moving... to see a computer someone else used
+        // Relay on: the new account gets its own keys after one restart.
+        verifyEmail: (email, code) => code !== '424242' ? fail('invalid email or code')
+            : /@moving/.test(email) ? delay('restart')
+            : signedIn(email).then(() => 'ok'),
         // Sign in as someone@other... to see the "start fresh" screen, or
         // someone@moving... to see the account being brought here.
         signIn: (email, pw) => pw === 'wrong' ? fail('invalid credentials')
@@ -270,7 +274,7 @@ function mockBackend() {
         startFresh: (email) => signedIn(email),
         // ?update=1 shows the "update ready" banner.
         updateStatus: () => delay(new URLSearchParams(location.search).get('update')
-            ? { version: '1.0.7', notes: 'Smoother calls.', page: 'https://github.com/panmauk/AltNet-Relay/releases', ready: true, install: '' } : null),
+            ? { version: '1.0.8', notes: 'Smoother calls.', page: 'https://github.com/panmauk/AltNet-Relay/releases', ready: true, install: '' } : null),
         installUpdate: () => delay(),
         openUpdatePage: () => delay(),
         setBusy: () => Promise.resolve(),
@@ -334,7 +338,7 @@ function mockBackend() {
         reportCoworker: (ws, pid, why) => { console.info('[mock] report to the owner of', ws, 'about', pid, ':', why); return delay(); },
         workspaceReports: (ws) => delay((convs[ws] && convs[ws].reports || []).filter(r => !r.done)),
         dismissReport: (ws, rid) => { (convs[ws].reports || []).forEach(r => { if (r.id === rid) r.done = true; }); convs[ws].reportCount = 0; return delay(); },
-        settings: () => delay({ background: true, notifications: true, startup: false, startupAvailable: true, trayAvailable: true, autoUpdate: true, version: '1.0.6' }),
+        settings: () => delay({ background: true, notifications: true, startup: false, startupAvailable: true, trayAvailable: true, autoUpdate: true, version: '1.0.7' }),
         setSetting: () => delay(),
         setFocused: () => Promise.resolve(),
         testNotification: () => delay('Sent. If nothing appeared, Windows may be hiding it.'),
@@ -2288,8 +2292,12 @@ function wireAuth() {
         submitAuth(verify, async () => {
             const code = val(verify, 'code');
             if (!code) throw new Error('Type the code from the email.');
-            await backend.verifyEmail(AUTH.email, code);
+            const status = await backend.verifyEmail(AUTH.email, code);
             verify.elements.code.value = '';
+            if (status === 'restart') {
+                showAuth('moving');
+                return;
+            }
             await applyGate(await backend.account());
         });
     };

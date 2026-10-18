@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -265,5 +266,44 @@ func TestMembersDirectMessageIsARequest(t *testing.T) {
 	}
 	if s, _ := summaryFor(kate, zed.Username()); s.Request || !s.Accepted {
 		t.Fatalf("after accepting, zed is a normal chat: %+v", s)
+	}
+}
+
+// Anyone who knows your name can invite you, so someone who isn't a contact
+// gets at most maxInvitesPerStranger invitations waiting at once. Contacts
+// aren't limited.
+func TestStrangersCanOnlyInviteSoOften(t *testing.T) {
+	rob, kate, zed := trio(t)
+	var fromZed, fromKate []string
+	for i := 0; i < 3; i++ {
+		id, err := zed.CreateGroup(fmt.Sprintf("zed %d", i), []string{rob.Username()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromZed = append(fromZed, id)
+		id, err = kate.CreateGroup(fmt.Sprintf("kate %d", i), []string{rob.Username()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromKate = append(fromKate, id)
+	}
+	for _, id := range fromKate {
+		waitInvited(t, rob, id)
+	}
+	invited := func() int {
+		n := 0
+		for _, id := range fromZed {
+			if groupStatus(rob, id) == state.GroupInvited {
+				n++
+			}
+		}
+		return n
+	}
+	if !waitPolled(rob, 10*time.Second, func() bool { return invited() == maxInvitesPerStranger }) {
+		t.Fatalf("from a stranger: %d invitations kept, want %d", invited(), maxInvitesPerStranger)
+	}
+	waitPolled(rob, 2*time.Second, func() bool { return false })
+	if n := invited(); n != maxInvitesPerStranger {
+		t.Fatalf("a stranger got %d invitations through", n)
 	}
 }

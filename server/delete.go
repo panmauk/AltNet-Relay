@@ -220,10 +220,14 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request, p Principa
 
 	// The password, asked of the accounts backend: this server never keeps one.
 	if req.Password != "" {
-		err := s.accounts.CheckPassword(r.Context(), p.Email, req.Password)
+		var he *httpError
+		err := s.checkPassword(r.Context(), p.Email, req.Password)
 		switch {
 		case errors.Is(err, ErrWrongPassword):
 			wrong("that password isn't right")
+			return
+		case errors.As(err, &he):
+			s.fail(w, err)
 			return
 		case err != nil:
 			s.log.Warn("password check failed", "err", err)

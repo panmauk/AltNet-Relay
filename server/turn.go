@@ -43,6 +43,18 @@ func (s *Server) handleTURN(w http.ResponseWriter, _ *http.Request, p Principal)
 		writeError(w, http.StatusNotFound, "the call relay isn't set up on this server")
 		return
 	}
+	// A banned account can't make calls (the app won't, and nobody can reach
+	// it); it gets no use of the relay either.
+	var banned *Account
+	s.store.View(func(d *fileData) {
+		if a := d.Accounts[p.Email]; a != nil && a.Banned {
+			banned = a
+		}
+	})
+	if banned != nil {
+		writeError(w, http.StatusForbidden, banMessage(banned))
+		return
+	}
 	ttl := s.turn.TTL
 	if ttl <= 0 {
 		ttl = time.Hour

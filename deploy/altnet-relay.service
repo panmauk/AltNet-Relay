@@ -36,10 +36,29 @@ RestartSec=3
 # The machine is small (about 1 GB) and shared with the seed and the
 # accounts backend. This keeps a runaway Relay from taking them down.
 MemoryMax=200M
+
+# What the server may touch: its own folder, and nothing else. It runs as
+# ubuntu, whose home holds the SSH keys; ProtectHome hides /home entirely, so
+# a break-in through the server can't read or change them.
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=full
+ProtectSystem=strict
 ReadWritePaths=/opt/altnet/relay
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 
 [Install]
 WantedBy=multi-user.target

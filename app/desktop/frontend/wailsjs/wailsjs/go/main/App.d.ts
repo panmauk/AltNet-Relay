@@ -99,7 +99,7 @@ export function UnlockCopy(arg1:string):Promise<void>;
 
 export function UpdateStatus():Promise<main.UpdateView>;
 
-export function VerifyEmail(arg1:string,arg2:string):Promise<void>;
+export function VerifyEmail(arg1:string,arg2:string):Promise<string>;
 
 export function WarmCalls():Promise<void>;
 

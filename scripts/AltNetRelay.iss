@@ -13,7 +13,7 @@
 ; desktop apps go.
 
 #define AppName      "AltNet Relay"
-#define AppVersion   "1.0.6"
+#define AppVersion   "1.0.7"
 #define AppPublisher "PANMOX"
 #define AppExe       "AltNetRelay.exe"
 

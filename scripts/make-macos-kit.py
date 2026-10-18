@@ -19,7 +19,7 @@ import sys
 import zipfile
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CORE = os.environ.get('ALTNET_CORE', '').strip()
+CORE = os.environ.get('ALTNET_CORE', '').strip() or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'AltNet')
 DIST = os.path.join(HERE, 'dist')
 KIT = os.path.join(DIST, 'AltNetRelay-macOS')
 SRC = os.path.join(KIT, 'src')
@@ -42,6 +42,14 @@ def copytree(src, dst):
             shutil.copy2(os.path.join(root, f), os.path.join(out, f))
 
 
+def tracked(root):
+    """The files git tracks in root, as forward-slash paths."""
+    out = subprocess.run(['git', 'ls-files', '-z'], cwd=root, capture_output=True)
+    if out.returncode != 0:
+        sys.exit('make-macos-kit: the project must be a git checkout (only tracked files go into the kit)')
+    return [p for p in out.stdout.decode('utf-8').split('\0') if p]
+
+
 def run(cmd, cwd, env=None):
     e = dict(os.environ)
     e.update(env or {})
@@ -53,15 +61,22 @@ def run(cmd, cwd, env=None):
 
 
 def main():
-    if not CORE:
-        sys.exit('Set ALTNET_CORE to the AltNet core repository root.')
+    if not os.path.isdir(os.path.join(CORE, 'core')):
+        sys.exit('AltNet core not found at ' + CORE + ': clone github.com/panmauk/AltNet next to this folder, or set ALTNET_CORE.')
     print(f'==> AltNet Relay {VER}: Mac build kit')
     if os.path.exists(KIT):
         shutil.rmtree(KIT)
     os.makedirs(SRC)
 
     print('==> copying the source and the AltNet core library')
-    copytree(HERE, SRC)
+    # Only what git tracks: the same files as the public repository. Notes,
+    # drafts and anything else kept beside the code on this computer stay here.
+    for rel in tracked(HERE):
+        if rel.split('/')[0] in SKIP_DIRS or SKIP_FILES.match(rel):
+            continue
+        dst = os.path.join(SRC, *rel.split('/'))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(os.path.join(HERE, *rel.split('/')), dst)
     # The scripts folder is for this PC; the Mac gets its own two files.
     shutil.rmtree(os.path.join(SRC, 'scripts'), ignore_errors=True)
     core_dst = os.path.join(SRC, 'third_party', 'altnet')

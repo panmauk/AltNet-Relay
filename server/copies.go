@@ -33,6 +33,9 @@ const (
 	deviceHeader = "X-Relay-Device"
 )
 
+// CopyUploadTime is how long one copy may take to arrive.
+const CopyUploadTime = 3 * time.Minute
+
 // CopyMinGap is the shortest gap between two saves of one account's copy.
 // A variable so tests elsewhere can shorten it.
 var CopyMinGap = 15 * time.Second
@@ -117,6 +120,12 @@ func (s *Server) handlePutBackup(w http.ResponseWriter, r *http.Request, p Princ
 	if s.fail(w, refuse) {
 		return
 	}
+	// The server's read timeout is short, for every other request. A copy can
+	// be several megabytes from a slow home connection, and this one comes
+	// from a signed-in account that holds the account here, so it gets longer.
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Now().Add(CopyUploadTime))
+	_ = rc.SetWriteDeadline(time.Now().Add(CopyUploadTime + 30*time.Second))
 	blob, err := io.ReadAll(http.MaxBytesReader(w, r.Body, MaxCopySize))
 	if err != nil {
 		writeError(w, http.StatusRequestEntityTooLarge, "this account is too large to copy")

@@ -12,3 +12,10 @@ demo/
 
 # Never commit keys
 *.key
+
+# Working notes and legal drafts stay on this computer
+/*.md
+!/README.md
+legal/*.md
+legal/internal/
+legal/publish/*.md

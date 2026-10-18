@@ -3,6 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- A second line of defence: everything other people write is inserted
+         as text (main.js), and even if that ever slipped, this page would run
+         no script but its own files and load nothing from anywhere else. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob: mediastream:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <title>AltNet Relay</title>
     <link rel="stylesheet" href="src/style.css">
 </head>

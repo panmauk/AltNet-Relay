@@ -104,6 +104,7 @@ type Server struct {
 	mailer   Mailer
 	accounts Accounts
 	del      deletions
+	guesses  passwordGuesses // wrong passwords, per account; see limits.go
 
 	// MinReporterAge is the age an account needs before its reports count
 	// towards an automatic ban (DefaultMinReporterAge unless changed).
@@ -268,16 +269,19 @@ func (s *Server) handleBind(w http.ResponseWriter, r *http.Request, p Principal)
 		return
 	}
 	if req.Replace {
-		check := s.passwords()
-		if check == nil {
-			writeError(w, http.StatusServiceUnavailable, "starting fresh isn't available right now; try again later")
-			return
-		}
-		switch err := check.CheckPassword(r.Context(), p.Email, req.Password); {
+		var he *httpError
+		switch err := s.checkPassword(r.Context(), p.Email, req.Password); {
+		case err == nil:
 		case errors.Is(err, ErrWrongPassword):
 			writeError(w, http.StatusForbidden, "that password isn't right")
 			return
-		case err != nil:
+		case errors.As(err, &he):
+			s.fail(w, err)
+			return
+		case errors.Is(err, errNoPasswordCheck):
+			writeError(w, http.StatusServiceUnavailable, "starting fresh isn't available right now; try again later")
+			return
+		default:
 			writeError(w, http.StatusServiceUnavailable, "the account service isn't reachable right now; try again shortly")
 			return
 		}
@@ -286,7 +290,8 @@ func (s *Server) handleBind(w http.ResponseWriter, r *http.Request, p Principal)
 	var replaced string
 	err = s.store.Update(func(d *fileData) error {
 		if other := d.byUsername(req.Username); other != nil && other.Email != p.Email {
-			return errConflict("that Relay identity already belongs to another account")
+			return &httpError{status: http.StatusConflict, code: CodeIdentityTaken,
+				msg: "that Relay identity already belongs to another account"}
 		}
 		a := d.accountFor(p.Email)
 		if a.Banned {
@@ -297,7 +302,8 @@ func (s *Server) handleBind(w http.ResponseWriter, r *http.Request, p Principal)
 			// same identity with it (the locked copy); a different one is only
 			// taken when the person chose to start fresh there, so two
 			// computers never quietly fight over the account.
-			return errConflict("this account is set up with other keys; sign in again to bring them here, or start fresh")
+			return &httpError{status: http.StatusConflict, code: CodeAccountHasKeys,
+				msg: "this account is set up with other keys; sign in again to bring them here, or start fresh"}
 		}
 		if a.Username != "" && a.Username != req.Username {
 			replaced = a.Username
@@ -912,14 +918,23 @@ func isHex(s string) bool {
 type httpError struct {
 	status int
 	msg    string
+	code   string // optional, for the app to tell refusals apart; msg is for people
 }
 
 func (e *httpError) Error() string { return e.msg }
 
-func errConflict(m string) error { return &httpError{http.StatusConflict, m} }
-func errNotFound(m string) error { return &httpError{http.StatusNotFound, m} }
-func errTooMany(m string) error  { return &httpError{http.StatusTooManyRequests, m} }
-func errBanned(a *Account) error { return &httpError{http.StatusForbidden, banMessage(a)} }
+func errConflict(m string) error { return &httpError{status: http.StatusConflict, msg: m} }
+func errNotFound(m string) error { return &httpError{status: http.StatusNotFound, msg: m} }
+func errTooMany(m string) error  { return &httpError{status: http.StatusTooManyRequests, msg: m} }
+func errBanned(a *Account) error { return &httpError{status: http.StatusForbidden, msg: banMessage(a)} }
+
+// Codes the app acts on. Both are "conflict", and they call for different
+// things: another account owns these keys (this account needs keys of its
+// own), or this account already has other keys (bring them, or start fresh).
+const (
+	CodeIdentityTaken  = "identity_taken"
+	CodeAccountHasKeys = "account_has_keys"
+)
 
 // fail writes an error response and reports true if err is non-nil.
 func (s *Server) fail(w http.ResponseWriter, err error) bool {
@@ -928,7 +943,11 @@ func (s *Server) fail(w http.ResponseWriter, err error) bool {
 	}
 	var he *httpError
 	if errors.As(err, &he) {
-		writeError(w, he.status, he.msg)
+		if he.code != "" {
+			writeJSON(w, he.status, map[string]string{"error": he.msg, "code": he.code})
+		} else {
+			writeError(w, he.status, he.msg)
+		}
 		return true
 	}
 	s.log.Error("request failed", "err", err)
@@ -985,8 +1004,10 @@ type BackendVerifier struct {
 	HTTP    *http.Client
 	TTL     time.Duration // 0 means 60s
 
-	mu    sync.Mutex
-	cache map[[32]byte]cachedPrincipal
+	mu      sync.Mutex
+	cache   map[[32]byte]cachedPrincipal
+	refused map[[32]byte]time.Time // tokens the backend said no to, until when
+	budget  lookupBudget           // see limits.go
 }
 
 type cachedPrincipal struct {
@@ -1000,10 +1021,19 @@ func (v *BackendVerifier) Verify(ctx context.Context, token string) (Principal, 
 	if ttl == 0 {
 		ttl = 60 * time.Second
 	}
+	now := time.Now()
 	v.mu.Lock()
-	if c, ok := v.cache[key]; ok && time.Now().Before(c.expires) {
+	if c, ok := v.cache[key]; ok && now.Before(c.expires) {
 		v.mu.Unlock()
 		return c.p, nil
+	}
+	if until, ok := v.refused[key]; ok && now.Before(until) {
+		v.mu.Unlock()
+		return Principal{}, ErrUnauthorized
+	}
+	if !v.budget.take(now) {
+		v.mu.Unlock()
+		return Principal{}, errLookupsBusy
 	}
 	v.mu.Unlock()
 
@@ -1025,6 +1055,7 @@ func (v *BackendVerifier) Verify(ctx context.Context, token string) (Principal, 
 	switch resp.StatusCode {
 	case http.StatusOK:
 	case http.StatusUnauthorized:
+		v.remember(key)
 		return Principal{}, ErrUnauthorized
 	case http.StatusForbidden:
 		return Principal{}, ErrSuspended
@@ -1040,6 +1071,7 @@ func (v *BackendVerifier) Verify(ctx context.Context, token string) (Principal, 
 		return Principal{}, err
 	}
 	if me.Email == "" || !me.Verified {
+		v.remember(key)
 		return Principal{}, ErrUnauthorized
 	}
 	p := Principal{Email: strings.ToLower(me.Email), Admin: me.Admin}
@@ -1051,4 +1083,15 @@ func (v *BackendVerifier) Verify(ctx context.Context, token string) (Principal, 
 	v.cache[key] = cachedPrincipal{p: p, expires: time.Now().Add(ttl)}
 	v.mu.Unlock()
 	return p, nil
+}
+
+// remember notes a token the backend refused, so asking again with it costs
+// nothing for a while.
+func (v *BackendVerifier) remember(key [32]byte) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.refused == nil || len(v.refused) > maxRemembered {
+		v.refused = map[[32]byte]time.Time{}
+	}
+	v.refused[key] = time.Now().Add(refusedFor)
 }

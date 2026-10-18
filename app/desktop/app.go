@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -422,12 +423,26 @@ func (a *App) SignUp(email, password string) error {
 	return e.SignUp(email, password)
 }
 
-func (a *App) VerifyEmail(email, code string) error {
+// VerifyEmail confirms the emailed code, which also signs in. Like SignIn it
+// answers "ok" or "restart": on a computer someone else used Relay on, the new
+// account gets keys of its own, and the app restarts once to load them.
+func (a *App) VerifyEmail(email, code string) (string, error) {
 	e, err := a.ready()
 	if err != nil {
-		return err
+		return "", err
 	}
-	return e.VerifyEmail(email, code)
+	err = e.VerifyEmail(email, code)
+	if errors.Is(err, engine.ErrRestart) {
+		go func() {
+			time.Sleep(1500 * time.Millisecond) // let the window say what's happening
+			a.restart()
+		}()
+		return "restart", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return "ok", nil
 }
 
 func (a *App) SignOut() error {
