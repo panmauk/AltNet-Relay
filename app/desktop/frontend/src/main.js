@@ -88,6 +88,7 @@ function wailsBackend(App, rt) {
    browser: an ongoing chat, a quiet one, and a pending message request.
    Nothing here ships behaviour -- it only has to look right. */
 function mockBackend() {
+    const mockStart = Date.now();
     const now = Math.floor(Date.now() / 1000);
     const day = 86400;
     const listeners = {};
@@ -258,7 +259,12 @@ function mockBackend() {
 
     return {
         live: false,
-        account: () => delay({ ...acct }),
+        // ?slow=8 pretends the app takes 8 seconds to open.
+        account: () => {
+            const slow = Number(new URLSearchParams(location.search).get('slow') || 0);
+            return Date.now() - mockStart < slow * 1000
+                ? fail('still starting up — try again in a moment') : delay({ ...acct });
+        },
         signUp: (email, pw) => email.includes('taken') ? fail('email already registered') : delay(),
         // Sign up as someone@moving... to see a computer someone else used
         // Relay on: the new account gets its own keys after one restart.
@@ -274,7 +280,7 @@ function mockBackend() {
         startFresh: (email) => signedIn(email),
         // ?update=1 shows the "update ready" banner.
         updateStatus: () => delay(new URLSearchParams(location.search).get('update')
-            ? { version: '1.0.8', notes: 'Smoother calls.', page: 'https://github.com/panmauk/AltNet-Relay/releases', ready: true, install: '' } : null),
+            ? { version: '1.0.9', notes: 'Smoother calls.', page: 'https://github.com/panmauk/AltNet-Relay/releases', ready: true, install: '' } : null),
         installUpdate: () => delay(),
         openUpdatePage: () => delay(),
         setBusy: () => Promise.resolve(),
@@ -338,7 +344,7 @@ function mockBackend() {
         reportCoworker: (ws, pid, why) => { console.info('[mock] report to the owner of', ws, 'about', pid, ':', why); return delay(); },
         workspaceReports: (ws) => delay((convs[ws] && convs[ws].reports || []).filter(r => !r.done)),
         dismissReport: (ws, rid) => { (convs[ws].reports || []).forEach(r => { if (r.id === rid) r.done = true; }); convs[ws].reportCount = 0; return delay(); },
-        settings: () => delay({ background: true, notifications: true, startup: false, startupAvailable: true, trayAvailable: true, autoUpdate: true, version: '1.0.7' }),
+        settings: () => delay({ background: true, notifications: true, startup: false, startupAvailable: true, trayAvailable: true, autoUpdate: true, version: '1.0.8' }),
         setSetting: () => delay(),
         setFocused: () => Promise.resolve(),
         testNotification: () => delay('Sent. If nothing appeared, Windows may be hiding it.'),
@@ -3050,13 +3056,32 @@ async function boot() {
 
     // The engine opens a moment after the window does; give it a few tries
     // before calling that a failure.
+    // Opening can take a while: loading what this computer stores for the
+    // network, or a first start that Windows is still scanning. While the
+    // answer is "still starting", keep waiting (and say so); only a real
+    // failure, or minutes of nothing, ends in an error -- with a way to retry.
     let acct, lastErr;
-    for (let i = 0; i < 20 && !acct; i++) {
-        try { acct = await backend.account(); }
-        catch (e) { lastErr = e; await new Promise(r => setTimeout(r, 250)); }
+    const started = Date.now();
+    let note = null;
+    while (!acct) {
+        try { acct = await backend.account(); break; }
+        catch (e) { lastErr = e; }
+        const starting = /still starting/i.test(errText(lastErr));
+        if (!starting || Date.now() - started > 180000) break;
+        if (!note && Date.now() - started > 1500) {
+            note = el('div', 'boot-note', 'Starting AltNet Relay…');
+            document.body.appendChild(note);
+        }
+        await new Promise(r => setTimeout(r, 300));
     }
+    if (note) note.remove();
     if (!acct) {
-        document.body.textContent = 'Relay could not start: ' + errText(lastErr);
+        document.body.replaceChildren(el('p', 'boot-note', 'Relay could not start: ' + errText(lastErr)));
+        const again = el('button', 'btn', 'Try again');
+        again.style.width = 'auto';
+        again.style.margin = '0 24px';
+        again.onclick = () => location.reload();
+        document.body.appendChild(again);
         return;
     }
     S.gate = 'boot';

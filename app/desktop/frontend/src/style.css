@@ -1032,3 +1032,17 @@ textarea.field { resize: none; line-height: 1.5; }
 .wsr-actions { display: flex; gap: 8px; justify-content: flex-end; }
 .wsr-actions .btn { width: auto; padding: 6px 12px; font-size: 12px; }
 .thread-head .head-action.report-flag { margin-left: auto; color: var(--danger); }
+
+/* Shown while the app opens (a large network store can take a few seconds). */
+.boot-note {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 15px;
+    z-index: 1000;
+    pointer-events: none;
+}
+p.boot-note { position: static; padding: 24px; justify-content: flex-start; pointer-events: auto; }
